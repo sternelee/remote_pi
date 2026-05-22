@@ -195,10 +195,10 @@ Relay → App:
 
 ## Definition of Done
 
-- [ ] Wave 0: contratos + fixtures
-- [ ] W1.A: relay multi-room
-- [ ] W1.B: pi-ext room_id por cwd
-- [ ] W1.C: app discovery + UI
+- [x] Wave 0: contratos + 6 fixtures
+- [x] W1.A: relay multi-room (30 tests, +12)
+- [x] W1.B: pi-ext room_id por cwd (116 tests, +15)
+- [x] W1.C: app discovery + UI (190 tests, +15)
 - [ ] Wave 2: roundtrip 8 cenários
 - [ ] Wave 3: docs + commit
 

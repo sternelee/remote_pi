@@ -25,6 +25,7 @@ Campos (query string, URL-encoded):
 | `epk` | base64url, 32 bytes | Pubkey **Ed25519** de longo prazo do Mac. Único peer ID do Pi no relay |
 | ~~`r`~~ | ~~string~~ | **REMOVIDO (plano 14, 2026-05-21)** — relay agora vem de config do app (`Preferences.relayUrl`) e do pi-ext (env `REMOTE_PI_RELAY` ou config file). Encurta QR em ~30-50 chars. Legacy QRs com `r` ainda são lidos pelo app com aviso de conflito (modal) |
 | `n` | string UTF-8, max 80 chars | Nome legível da sessão (ex: `remote_pi · feature/protocol`) |
+| `rm` | base64url, 12 chars | **ADICIONADO (plano 17 fix, 2026-05-21)** — room_id derivado do cwd (`base64url(sha256(realpath(cwd)))[:12]`). Sem isso, app não saberia pra qual room mandar `pair_request` e tentaria a "main" (que falha porque Pi atual está em room=hash). Legacy QRs sem `rm` fallback pra "main" |
 
 > **Por que só Ed25519?** O `pk` (Curve25519) do plano 04 servia ao
 > handshake Noise XX. Sem Noise, sobra apenas a chave de autenticação

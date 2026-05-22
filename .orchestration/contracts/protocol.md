@@ -78,8 +78,13 @@ agora os 5 frames de presence.
 ## Outer envelope
 
 ```json
-{ "peer": "string-peer-id", "ct": "<base64 do JSON inner>" }
+{ "peer": "string-peer-id", "room": "string-room-id?", "ct": "<base64 do JSON inner>" }
 ```
+
+> **`room` (plano 17)**: identifica sub-canal dentro do peer_id. Pi-ext
+> deriva `room_id = base64url(sha256(realpath(cwd)))[:12]`. App envia
+> `room: "main"` (cliente). Default ausente = "main". Permite múltiplas
+> sessões Pi paralelas no mesmo Mac sem conflito de conexão no relay.
 
 **Semântica do campo `peer` (muda com o sentido do tráfego)**:
 
@@ -114,11 +119,15 @@ pelo relay e/ou empurrados pelo relay. Identificáveis por `type` no topo.
 
 | `type` | Campos | Descrição |
 |---|---|---|
-| `hello` | `pubkey` (base64 Ed25519) | Auth — já existia (`pairing.md`) |
+| `hello` | `pubkey` (base64 Ed25519), `room_id?` (string, default `"main"`), `room_meta?: {name, cwd, model?}` (plano 17/18) | Auth + identifica sub-canal. Pi-ext usa room_id derivado do cwd; `model` é nome do modelo IA ativo (plano 18, opcional). App sempre `"main"` |
+| `room_meta_update` | `room_id`, `meta: {model?}` | Plano 18: Pi envia ao detectar `model_select` event do SDK. Relay atualiza RoomMeta + broadcast `room_meta_updated` |
 | `auth` | `sig` (base64) | Auth — já existia |
 | `subscribe_presence` | `peers` (array de epk base64 standard) | Inscreve este peer pra receber `peer_online`/`peer_offline` dos epks listados. Idempotente: chamadas subsequentes substituem a lista. Lista vazia = unsubscribe all |
 | `unsubscribe_presence` | `peers` (array) | Remove subset de peers do subscribe (opcional — chamar `subscribe_presence` com lista nova é equivalente) |
 | `presence_check` | `peers` (array) | Pede snapshot pontual; relay responde com `presence` |
+| `subscribe_rooms` | `peers` (array de epk) | Plano 17: inscreve pra receber `room_announced`/`room_ended` dos peers listados |
+| `unsubscribe_rooms` | `peers` (array) | Remove subset de subscribe_rooms |
+| `rooms_check` | `peers` (array) | Snapshot pontual; relay responde com `rooms` |
 
 ### Relay → App
 
@@ -128,6 +137,10 @@ pelo relay e/ou empurrados pelo relay. Identificáveis por `type` no topo.
 | `peer_online` | `peer` (epk) | Push: peer subscrito acabou de autenticar |
 | `peer_offline` | `peer` (epk), `since_ts` (number, epoch ms) | Push: peer subscrito desconectou. `since_ts` é quando o disconnect aconteceu (relay knows) |
 | `presence` | `states: [{peer, online: bool, since_ts: number\|null}]` | Resposta a `presence_check`. `since_ts` é quando peer entrou neste estado (null se sempre offline / sempre online — relay define) |
+| `room_announced` | `peer` (epk), `room_id`, `name?`, `cwd?`, `model?` (plano 18), `started_at` | Plano 17 push: peer subscrito acabou de abrir uma room nova. `model` é o nome do modelo IA atual |
+| `room_ended` | `peer`, `room_id`, `since_ts` | Push: room foi fechada (peer desconectou esse sub-canal) |
+| `room_meta_updated` | `peer`, `room_id`, `meta: {model?}` | Plano 18: relay broadcast quando Pi enviou `room_meta_update`. App atualiza RoomInfo |
+| `rooms` | `peer`, `rooms: [{room_id, name?, cwd?, model?, started_at}]` | Resposta a `rooms_check`. Lista todas as rooms ativas daquele peer (com `model` quando presente) |
 
 **Regras**:
 - Relay aceita subscribe sem validar identidade do peer alvo (zero-knowledge — qualquer epk pode ser monitorado)
@@ -169,7 +182,7 @@ nenhuma. Cada conexão peer↔peer já é exclusiva daquela sessão.
 
 | `type` | Campos | Iniciado por |
 |---|---|---|
-| `pair_ok` | `in_reply_to`, `session_name`, `session_started_at` (number, epoch ms) | Resposta ao `pair_request` válido |
+| `pair_ok` | `in_reply_to`, `session_name`, `session_started_at` (number, epoch ms), `room_id` (string, plano 17 fix) | Resposta ao `pair_request` válido. App salva `room_id` no PeerRecord pra reconectar futuros (em vez de chutar "main") |
 | `pair_error` | `in_reply_to`, `code`, `message` | Resposta ao `pair_request` inválido (ver `pairing.md`) |
 | `user_input` | `id`, `text` | Push — input que o user digitou no terminal Pi (ou via RPC). Permite app espelhar perguntas que não vieram dele. `id` correlaciona com `agent_chunk`/`agent_done` subsequentes (`in_reply_to = id`) |
 | `agent_chunk` | `in_reply_to`, `delta` | Push streaming |
