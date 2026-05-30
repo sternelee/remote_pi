@@ -33,6 +33,18 @@ const features = [
     icon: <MeshIcon />,
   },
   {
+    title: "Talk instead of type",
+    description:
+      "Dictate prompts with on-device speech-to-text — your voice becomes a message right on the phone, no cloud transcription step.",
+    icon: <VoiceIcon />,
+  },
+  {
+    title: "Attach an image",
+    description:
+      "Snap a photo or pick one from your gallery and send it straight to a multimodal agent — screenshots, diagrams, a whiteboard shot.",
+    icon: <ImageIcon />,
+  },
+  {
     title: "Open source, self-hostable",
     description:
       "MIT licensed. Run your own relay behind a VPN for full confidentiality from the relay operator — same protocol, same client.",
@@ -317,6 +329,44 @@ function MeshIcon() {
       <circle cx="18" cy="6" r="2" />
       <circle cx="12" cy="18" r="2" />
       <path d="M7.6 7.5 11 16.4M16.4 7.5 13 16.4M8 6h8" />
+    </svg>
+  );
+}
+
+function VoiceIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m21 16-5-5L5 20" />
     </svg>
   );
 }
