@@ -25,7 +25,7 @@ export default function DocsPage() {
   return (
     <DocsShell
       title="Remote Pi docs"
-      lastUpdated="2026-05-24"
+      lastUpdated="2026-05-30"
       sidebar={<DocsToc />}
       intro={
         <p>
@@ -172,7 +172,12 @@ export default function DocsPage() {
             <strong className="text-fg">relay</strong> — a small WebSocket
             server that ferries messages between paired peers. Multiple phones
             paired to the same Owner key stay in sync; multiple Owners can
-            pair the same machine without colliding.
+            pair the same machine without colliding. Beyond chat, a paired
+            phone can drive the session with a few typed{" "}
+            <a href="#quick-actions" className="text-accent underline">
+              quick actions
+            </a>{" "}
+            — compact, new session, switch model or thinking level.
           </p>
           <p>
             <strong className="text-fg">Trust model (current MVP).</strong>{" "}
@@ -208,10 +213,26 @@ export default function DocsPage() {
           <p>App downloads:</p>
           <ul className="ml-6 list-disc space-y-2">
             <li>
-              <strong className="text-fg">Google Play</strong> — <em>coming soon</em>
+              <strong className="text-fg">Google Play</strong> —{" "}
+              <a
+                className="text-accent underline"
+                href="https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Get it on Google Play
+              </a>
             </li>
             <li>
-              <strong className="text-fg">App Store</strong> — <em>coming soon</em>
+              <strong className="text-fg">App Store</strong> —{" "}
+              <a
+                className="text-accent underline"
+                href="https://apps.apple.com/app/remote-pi-coding-agent/id6773499691"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Download on the App Store
+              </a>
             </li>
             <li>
               <strong className="text-fg">Android APK</strong> — direct download from the{" "}
@@ -222,11 +243,11 @@ export default function DocsPage() {
             </li>
           </ul>
           <p>
-            Until the public stores have the app, follow{" "}
+            Prefer to sideload or build it yourself? Follow{" "}
             <a className="text-accent underline" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
               the repo
             </a>{" "}
-            for build/beta info.
+            for build info and APK releases.
           </p>
         </DocsSubsection>
       </DocsSection>
@@ -346,6 +367,79 @@ export default function DocsPage() {
         <p>
           The shortid is the first 8 chars shown by{" "}
           <InlineCode>devices</InlineCode>.
+        </p>
+      </DocsSection>
+
+      <DocsSection id="quick-actions" title="Quick actions from the phone">
+        <p>
+          Beyond chatting, the mobile app can drive the paired Pi session with
+          a small set of <strong className="text-fg">typed actions</strong>.
+          This is a curated vocabulary — not a generic slash-command picker.
+          Each action maps to a public SDK call on the pi-extension side, so
+          the app never has to parse or mirror Pi&apos;s command surface; you
+          tap a control and the host does the rest.
+        </p>
+        <DocsTable
+          headers={["Action", "What it does"]}
+          rows={[
+            [
+              <strong key="t" className="text-fg">
+                Compact context
+              </strong>,
+              "Summarize the session history in place to reclaim context window — the same as running /compact on the host.",
+            ],
+            [
+              <strong key="t" className="text-fg">
+                New session
+              </strong>,
+              "Start a fresh session on the same paired machine, without touching the pairing.",
+            ],
+            [
+              <strong key="t" className="text-fg">
+                Set model
+              </strong>,
+              "Switch the active model. The app fetches the models that host can actually run, then sends your pick.",
+            ],
+            [
+              <strong key="t" className="text-fg">
+                Set thinking
+              </strong>,
+              <>
+                Change the reasoning effort level: <InlineCode>off</InlineCode>,{" "}
+                <InlineCode>minimal</InlineCode>, <InlineCode>low</InlineCode>,{" "}
+                <InlineCode>medium</InlineCode>, <InlineCode>high</InlineCode>,
+                or <InlineCode>xhigh</InlineCode>.
+              </>,
+            ],
+          ]}
+        />
+        <p>
+          <strong className="text-fg">Thinking levels</strong> are a fixed
+          enum. <InlineCode>xhigh</InlineCode> is only honored by model
+          families that support it (e.g. Anthropic 4.x reasoning, OpenAI
+          o-series); on other models Pi quietly falls back to the nearest
+          supported level rather than erroring.
+        </p>
+        <p>
+          Actions are acknowledged as soon as they&apos;re dispatched — the
+          visible effect then arrives through the normal channels. A compact
+          lands as chat output, a model switch broadcasts to every connected
+          phone, and a new session reports a fresh start time. The model picker
+          is read live from the host, so it always reflects what that machine
+          can run.
+        </p>
+        <p>
+          The full action vocabulary, wire format, and fallback semantics live
+          in{" "}
+          <a
+            className="text-accent underline"
+            href={`${GITHUB_URL}/blob/main/PROTOCOL.md`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            PROTOCOL.md
+          </a>{" "}
+          (the <em>App actions</em> section).
         </p>
       </DocsSection>
 
@@ -1124,6 +1218,7 @@ function DocsToc() {
         <TocItem href="#install" label="Install" />
         <TocItem href="#using-remote-pi" label={<>Using <InlineCode>/remote-pi</InlineCode></>} />
         <TocItem href="#pairing" label="Pairing a mobile device" />
+        <TocItem href="#quick-actions" label="Quick actions from the phone" />
         <TocItem href="#relay" label="The relay">
           <TocItem href="#community-relay" label="Community relay" sub />
           <TocItem href="#self-host" label="Self-host" sub />

@@ -1,263 +1,334 @@
-# Plano 28 — Slash commands no App
+# Plano 28 — App actions tipadas
 
-Objetivo: expor os slash commands do Pi (`/compact`, `/model`, etc. + comandos
-registrados por extensões como `/remote-pi …`) na UI do app mobile, com
-duas formas de invocação:
+**Objetivo**: dar à app mobile um conjunto curado de **ações tipadas** sobre a
+sessão do Pi — `compact`, `new session`, `set model`, `set thinking` — sem
+tentar espelhar o picker genérico de slash commands do TUI. Cada ação é uma
+mensagem own-wire estruturada, mapeada pra uma API pública do SDK do Pi.
 
-1. Botão picker ao lado do botão de arquivos no TextField (visível só com
-   input vazio) → bottom sheet com lista filtrável
-2. Trigger inline ao digitar `/` na primeira posição → popover ranqueado
+## Por que essa direção (e não picker genérico)
 
-Comando selecionado vira **chip canonizado** no TextField — backspace deleta o
-chip inteiro de uma vez. Envio com chip presente sai como `command_invoke`;
-sem chip, sai como texto livre (mesmo que comece com `/`).
+Tentamos primeiro um `list_commands` / `command_invoke` genérico (Slice 1
+escrito e depois removido). Findings que motivaram o pivot:
 
-**Status (2026-05-28)**: Wave 0 ✅ scout do SDK concluído. Wave A/B em
-execução pelo orquestrador (pi-pane ocupado).
+1. **SDK não expõe API genérica de invocação de builtins.** Apenas alguns
+   têm equivalente programático em `ExtensionContextActions` — `compact`,
+   `shutdown`, `setModel`, `setThinkingLevel`, `newSession`. O resto
+   (`/copy`, `/share`, `/fork`, `/tree`, `/login`, ...) só roda na TUI.
+2. **Mirror manual de builtins** vira débito vivo — a cada bump do SDK,
+   sincronizar lista manual no pi-extension.
+3. **Subset útil em mobile é pequeno**: `/copy`, `/import`, `/share`,
+   `/fork`, `/tree`, `/settings`, `/login`, `/logout`, `/scoped-models` não
+   fazem sentido sem a TUI ou exigem fluxos próprios.
+4. **UX**: chip canonizado + parsing de args é overhead pra um conjunto
+   pequeno de ações. Botões dedicados, segmented control, sub-picker nativo
+   são UX melhor pra cada caso.
+5. **Validação no pi-telegram** (estudado 2026-05-28): adapter Telegram
+   maduro pro Pi faz exatamente isto — vocabulário curado de ações
+   (`TELEGRAM_RESERVED_COMMAND_NAMES`, 12 itens), cada uma dispatchada pra
+   API SDK específica via dependency injection. Não é workaround; é o
+   padrão de adapter Pi.
+
+**Status (2026-05-28)**: Wave 0 ✅ (scout do SDK + decisão de pivot). Wave A
+em execução pelo orquestrador (pi-pane ocupado).
 
 ---
 
-## Wave 0 — Descoberta do SDK do Pi (CONCLUÍDA)
+## Wave 0 — Findings do SDK (CONCLUÍDA)
 
-Investigação no `@mariozechner/pi-coding-agent` 0.73.1 (read-only):
+### APIs públicas relevantes em `@mariozechner/pi-coding-agent` 0.73.1
 
-### Listing
+```ts
+// ExtensionAPI (instância `pi` passada pra extensão)
+pi.setModel(model: Model<any>): Promise<boolean>
+pi.setThinkingLevel(level: ThinkingLevel): void
+pi.getThinkingLevel(): ThinkingLevel
 
-✅ **`pi.getCommands(): SlashCommandInfo[]`** existe no `ExtensionAPI`. Retorna
-extensão-registered + prompt templates + skills. **NÃO inclui builtins.**
+// ExtensionContextActions (acessível via `ctx` dentro de handlers)
+ctx.compact(options?: CompactOptions): void
+ctx.shutdown(): void
+ctx.abort(): void
 
-Builtins (`BUILTIN_SLASH_COMMANDS`) moram em `core/slash-commands.js` mas
-`exports` field do package bloqueia deep import. Sem PR upstream, temos que
-**espelhar manualmente** a lista no pi-extension.
+// ExtensionCommandContextActions (acessível via `ctx` em command handlers)
+ctx.newSession(options?: NewSessionOptions): Promise<{cancelled: boolean}>
+ctx.fork(...)
+ctx.switchSession(...)
+ctx.reload(): Promise<void>
 
-Lista builtin no SDK 0.73.1 (mirror authoritative):
+// Factories públicos
+ModelRegistry.create(authStorage, modelsJsonPath?): ModelRegistry
+AuthStorage.create(authPath?): AuthStorage
 
-| name | description |
-|---|---|
-| `/settings` | Open settings menu |
-| `/model` | Select model |
-| `/scoped-models` | Enable/disable models for Ctrl+P cycling |
-| `/export` | Export session |
-| `/import` | Import and resume a session from a JSONL file |
-| `/share` | Share session as a secret GitHub gist |
-| `/copy` | Copy last agent message to clipboard |
-| `/name` | Set session display name |
-| `/session` | Show session info and stats |
-| `/changelog` | Show changelog entries |
-| `/hotkeys` | Show all keyboard shortcuts |
-| `/fork` | Create a new fork from a previous user message |
-| `/clone` | Duplicate the current session at the current position |
-| `/tree` | Navigate session tree |
-| `/login` | Configure provider authentication |
-| `/logout` | Remove provider authentication |
-| `/new` | Start a new session |
-| `/compact` | Manually compact the session context |
-| `/resume` | Resume a different session |
-| `/reload` | Reload keybindings, extensions, skills, prompts, themes |
-| `/quit` | Quit pi |
+// ModelRegistry instance methods
+reg.refresh(): void                 // re-lê auth + models.json do disco
+reg.getAll(): Model<Api>[]          // todos modelos conhecidos pelo SDK
+reg.getAvailable(): Model<Api>[]    // apenas com auth configurada
+reg.find(provider, modelId): Model<Api> | undefined
+```
 
-### Invocação
+### ThinkingLevel — enum fixo
 
-❌ **NÃO existe API tipo `pi.runBuiltin("compact")`**. Builtins são parseados
-num `if/else` chain dentro de `interactive-mode.js`, acoplado à TUI. Alguns
-têm equivalente programático via `ExtensionContextActions`:
+```ts
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+```
 
-| Builtin | Programmatic equiv |
-|---|---|
-| `/compact` | `ctx.compact()` |
-| `/quit` | `ctx.shutdown()` |
-| `/abort` (não é builtin, é hotkey) | `ctx.abort()` |
-| `/model` | `pi.setModel(model)` — precisa picker de modelo na app |
-| outros | sem equivalente — precisa PR upstream |
+6 valores. `"xhigh"` só em modelos selecionados — app pode mostrar todos com
+grayed-out no não-suportado, ou filtrar pelo `model.thinkingLevelMap`.
 
-Extension-registered commands têm `handler: (args, ctx) => Promise<void>`
-mas a `ExtensionAPI` não expõe lookup-by-name (só `getCommands` read-only).
-Pra invocar os nossos próprios `/remote-pi …` programaticamente, mantemos
-referência local dentro do `extension` factory.
+### ModelRegistry — discovery validada
 
-### Decisão arquitetural — Caminho A (recomendado e adotado)
+Probe local (2026-05-28): `ModelRegistry.create(AuthStorage.create())` lê os
+mesmos arquivos que o próprio Pi (`~/.pi/auth/*`, `~/.pi/models.json`).
+Retorna 971 modelos totais, 279 disponíveis (com auth) no setup atual.
 
-**Listar tudo (builtins via mirror + extensions via SDK), invocar subset
-curado.**
-
-- Lista enviada pra app inclui `invokable: boolean`
-- App renderiza não-invokable grayed com tooltip "available in terminal only"
-- Subset invokable inicial: `/compact`, `/quit`, `/abort` (via context),
-  `/model` (via `pi.setModel` + app picker), comandos `/remote-pi *` (via
-  referência local que mantemos)
-- PR upstream pra `pi.invokeBuiltin(name, args)` fica como upgrade path
-  futuro — quando aterrissa, flipamos mais `invokable: true` sem mudar wire
-
-Caminhos descartados:
-
-- **B — PR upstream agora**: bloqueia toda a feature em merge externo
-- **C — Monkey-patch**: frágil, quebra em update do SDK
+Decisão: pi-extension cria **sua própria instância** em vez de tentar acessar
+a interna do `AgentSession`. Custo: chamar `reg.refresh()` antes de cada
+`list_models` pra capturar mudanças feitas via `/login` no Pi.
 
 ---
 
 ## Wave A — Protocolo (em execução)
 
-Adicionar ao `pi-extension/src/protocol/types.ts`:
+Adicionar a `pi-extension/src/protocol/types.ts`:
 
 ```ts
-// ClientMessage union — nova variante:
-| { type: "list_commands"; id: string }
-| { type: "command_invoke"; id: string; name: string; args?: string }
+// ClientMessage — novas variantes:
+| { type: "session_new"; id: string }
+| { type: "session_compact"; id: string }
+| { type: "model_set"; id: string; provider: string; model_id: string }
+| { type: "thinking_set"; id: string; level: ThinkingLevel }
+| { type: "list_models"; id: string }
 
-// ServerMessage union — novas variantes:
-| { type: "commands_list"; in_reply_to: string; commands: WireCommand[] }
-| { type: "command_result"; in_reply_to: string; ok: boolean; error?: string }
+// ServerMessage — novas variantes:
+| { type: "action_ok"; in_reply_to: string; action: ActionName }
+| { type: "action_error"; in_reply_to: string; action: ActionName; error: string }
+| { type: "models_list"; in_reply_to: string; models: WireModel[]; current?: WireModel }
 
-// Novo tipo:
-export interface WireCommand {
-  /** Slash command name SEM a barra. Ex: "compact", "model", "remote-pi". */
+// Novos tipos:
+export type ActionName =
+  | "session_new"
+  | "session_compact"
+  | "model_set"
+  | "thinking_set";
+
+export type ThinkingLevel =
+  | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export interface WireModel {
+  /** Stable id within the provider (e.g. "claude-opus-4-7"). */
+  id: string;
+  /** Display name shown in the picker (e.g. "Claude Opus 4.7"). */
   name: string;
-  /** Descrição curta human-readable. */
-  description?: string;
-  /** Origem do comando no runtime do Pi. */
-  source: "builtin" | "extension" | "prompt" | "skill";
-  /** Whether this Pi build can invoke the command programmatically.
-   *  When false, the app should render the command as a hint only
-   *  (grayed out + tooltip "available in terminal only"). */
-  invokable: boolean;
-  /** Whether the command accepts free-text args after its name.
-   *  When true, the app shows a text input after the chip is placed. */
-  takes_args: boolean;
+  /** Provider slug (e.g. "anthropic"). */
+  provider: string;
+  /** Whether the model supports the thinking surface. */
+  reasoning: boolean;
+  /** Context window in tokens. */
+  context_window: number;
 }
 ```
 
-Também atualizar `PROTOCOL.md` no raiz com seção "Slash commands wire".
+Não há `list_thinking_levels` — os 6 valores são hardcoded no app.
+
+Atualizar `PROTOCOL.md` com seção "App actions" (substituindo o que estava
+sendo proposto pro picker genérico).
 
 **DoD Wave A**:
-- [ ] Tipos novos em `pi-extension/src/protocol/types.ts`
+- [ ] Tipos novos em `protocol/types.ts`
 - [ ] `pnpm typecheck` verde
-- [ ] Seção "Slash commands" no `PROTOCOL.md`
+- [ ] Seção "App actions" no `PROTOCOL.md` honesta sobre modelo (curado, não
+      genérico)
 
 ---
 
-## Wave B — pi-extension handler
+## Wave B — Handlers no pi-extension
 
-### Slice 1 — `list_commands` (em execução)
+### B.1 — Estado adicional na extensão
 
-- Novo arquivo `pi-extension/src/commands/builtin_mirror.ts` com a lista
-  espelhada da tabela acima + comentário apontando pro SDK 0.73.1 e TODO
-  de PR upstream
-- Em `index.ts`, no `_routeClientMessageFrom`:
-  ```ts
-  if (msg.type === "list_commands") {
-    _handleListCommands(sender, msg);
-    return;
+```ts
+// index.ts
+let _modelRegistry: ModelRegistry | null = null;
+
+function _ensureModelRegistry(): ModelRegistry {
+  if (!_modelRegistry) {
+    _modelRegistry = ModelRegistry.create(AuthStorage.create());
   }
-  ```
-- Handler junta `BUILTIN_SLASH_COMMANDS_MIRROR` + `_pi.getCommands()`,
-  mapeia pra `WireCommand[]` com `invokable` decidido por `_isInvokable(name, source)`
-- Tabela `INVOKABLE_BUILTINS = new Set(["compact", "quit"])` no MVP
-- Test vitest: simula `list_commands` request → asserta shape do reply
+  return _modelRegistry;
+}
+```
 
-### Slice 2 — `command_invoke` (FUTURO, fora desta wave)
+### B.2 — Dispatch das ações em `_routeClientMessageFrom`
 
-- Handler `_handleCommandInvoke` que despacha por nome:
-  - `compact` → `_lastCtx?.compact()`
-  - `quit` → `_lastCtx?.shutdown()` (com `bye` antes pro app)
-  - `model` → caso especial; ver Wave D
-  - `remote-pi*` → invoca via referência local
-  - outros → reply `{ok:false, error:"not_invokable"}`
-- Test vitest: cada nome curado retorna ok; nome não-invokable retorna erro
+```ts
+case "session_compact":
+  _handleAction(sender, msg, "session_compact", () => {
+    if (!_lastCtx?.compact) throw new Error("compact unavailable");
+    _lastCtx.compact();
+  });
+  break;
+
+case "session_new":
+  _handleActionAsync(sender, msg, "session_new", async () => {
+    if (!_lastCtx?.newSession) throw new Error("newSession unavailable");
+    const result = await _lastCtx.newSession();
+    if (result.cancelled) throw new Error("cancelled");
+  });
+  break;
+
+case "thinking_set":
+  _handleAction(sender, msg, "thinking_set", () => {
+    _pi!.setThinkingLevel(msg.level);
+  });
+  break;
+
+case "model_set":
+  _handleActionAsync(sender, msg, "model_set", async () => {
+    const reg = _ensureModelRegistry();
+    reg.refresh();
+    const model = reg.find(msg.provider, msg.model_id);
+    if (!model) throw new Error(`model ${msg.provider}/${msg.model_id} not found`);
+    const ok = await _pi!.setModel(model);
+    if (!ok) throw new Error("no auth configured for model");
+  });
+  break;
+
+case "list_models":
+  _handleListModels(sender, msg);
+  break;
+```
+
+`_handleAction` / `_handleActionAsync` são helpers tiny que:
+- chamam o bloco
+- em sucesso enviam `action_ok`
+- em erro pegam o `.message` e enviam `action_error`
+
+### B.3 — `_handleListModels`
+
+```ts
+function _handleListModels(sender, msg) {
+  const reg = _ensureModelRegistry();
+  reg.refresh();
+  const models: WireModel[] = reg.getAvailable().map(m => ({
+    id: m.id,
+    name: m.name,
+    provider: m.provider,
+    reasoning: m.reasoning,
+    context_window: m.contextWindow,
+  }));
+  const current = _pi?.getModel?.();  // se exposto no ExtensionAPI
+  sender.send({
+    type: "models_list",
+    in_reply_to: msg.id,
+    models,
+    current: current ? wireFromModel(current) : undefined,
+  });
+}
+```
+
+Investigar se `pi.getModel()` existe — caso contrário, app rastreia o
+modelo atual via `model_select` event (já broadcast hoje).
 
 **DoD Wave B**:
-- [ ] Slice 1: handler `list_commands` + builtin mirror + test
-- [ ] Slice 2: handler `command_invoke` + matriz de dispatch + test
-- [ ] `pnpm typecheck && pnpm test` verdes
-- [ ] Sem regressão nos 384 testes baseline
+- [ ] `_ensureModelRegistry` + reuso entre chamadas
+- [ ] 5 cases novos no `switch`
+- [ ] `_handleListModels` + `wireFromModel` helper
+- [ ] `action_ok`/`action_error` consistente em todos os casos
+- [ ] Tests vitest cobrindo cada handler com fakes do `pi` / `_lastCtx`
+- [ ] `pnpm typecheck && pnpm test` verdes, sem regressão (baseline 384)
 
 ---
 
 ## Wave C — App UI
 
-**Toca**: `app/lib/ui/chat/`, `app/lib/data/commands/` (novo), `app/lib/domain/`
+**Toca**: `app/lib/ui/chat/`, `app/lib/data/actions/` (novo)
 
-### Listagem
-- Repositório `CommandsRepository` que envia `list_commands` na abertura do
-  chat e cacheia por `(piPeerId, sessionId)`
-- Refresh manual via pull-to-refresh ou ao receber error "stale"
+### Bottom sheet "Quick actions"
 
-### UI do TextField
-- Botão "/" ao lado do botão de arquivos, visível **só quando input vazio**
-  (`controller.text.isEmpty`)
-- Tap → bottom sheet com `ListView` filtrável
-- Item: `nome • descrição • badge da source • indicador "terminal only" se !invokable`
+Botão ⚙ ao lado do botão de arquivos no TextField, visível só com input
+vazio. Tap → bottom sheet:
 
-### Trigger inline
-- `TextField` com listener que, ao detectar `/` no índice 0 com input limpo
-  acima, abre `OverlayEntry` posicionado acima do TextField
-- Continua filtrando enquanto digita; Esc/tap-fora fecha
-- Tap em item canoniza → substitui o texto por um chip widget
+```
+┌─────────────────────────────┐
+│ Quick actions               │
+├─────────────────────────────┤
+│ 🗜️  Compact context        │
+│ ✨  New session             │
+├─────────────────────────────┤
+│ Model                       │
+│ Claude Opus 4.7         ›   │  ← tap abre sub-picker
+├─────────────────────────────┤
+│ Thinking                    │
+│ [off ·min·low·med·high·x]   │  ← segmented inline
+└─────────────────────────────┘
+```
 
-### Chip canonizado
-- `CommandChip` widget dentro de `Row` com o TextField — usar `TextField` com
-  `prefixIcon` carregando o chip OU substituir por `RichText` editable
-- Decisão de implementação: provavelmente `flutter_chips_input`-style custom
-  widget. Detalhe técnico fica pro agent do app
-- Backspace na borda esquerda do texto pós-chip → deleta chip inteiro
-- Texto depois do chip = `args`
+- **Compact** / **New session**: tap → envia ação → mostra toast em
+  `action_ok` ou erro em `action_error`. New session pede confirmação
+  ("Vai limpar o contexto").
+- **Model sub-picker**: novo screen ou bottom sheet maior. App envia
+  `list_models` na abertura, cacheia por `(piPeerId, sessionId)`,
+  permite filtrar por provider. Tap em model → `model_set`.
+- **Thinking segmented**: 6 botões. Reflete `getThinkingLevel` atual
+  (sincronizado via `model_select` event que já carrega thinking
+  level). Tap → `thinking_set` otimista + revert em erro.
 
-### Envio
-- Sem chip: `user_message` normal
-- Com chip: `command_invoke { name: chip.name, args: textAfterChip.trim() }`
-- Aguarda `command_result` → mostra toast de erro ou nada se ok
-  (efeitos visíveis virão por `agent_chunk`/`agent_done` se o comando produz
-  output)
+### Reflexão de mudanças externas
+
+Outros owners (outro celular) podem invocar as mesmas ações. Pi-extension
+já faz broadcast de `model_select` pra todos os attached owners. App
+escuta esse evento pra refletir mudanças de modelo. Pra thinking precisa
+ver se o broadcast atual cobre — senão adicionar.
 
 **DoD Wave C**:
-- [ ] Botão picker visível só com input vazio
-- [ ] Bottom sheet filtrável funcional
-- [ ] Trigger inline por `/` com overlay
-- [ ] Chip canonizado + backspace atômico
-- [ ] Envio diferenciado (text vs command_invoke)
-- [ ] Não-invokable: chip grayed + bloqueio no envio com toast
-- [ ] `flutter test` cobrindo lógica de canonização e envio
-- [ ] Smoke: pair → rodar `/compact` via picker → ver chat compactado
+- [ ] Botão ⚙ visível só com input vazio
+- [ ] Bottom sheet funcional com 4 ações
+- [ ] Model sub-picker com filtro por provider
+- [ ] Thinking segmented + estado sincronizado
+- [ ] Toast/inline error em `action_error`
+- [ ] `flutter test` cobrindo cada ação
+- [ ] Smoke: pair → compact → ver chat compactado; trocar modelo → ver
+      `model_select` propagado
 
 ---
 
 ## Wave D — Polish + futuras integrações
 
-- **`/model` UX especial**: ao escolher `/model`, app abre um sub-picker com
-  lista de modelos disponíveis (já temos `mesh_models` ou similar?). Envia
-  `command_invoke { name: "model", args: "<model_id>" }`
-- **Cross-PC**: listar comandos de um Pi irmão. Requer roteamento via
-  envelope cross-PC. Fora do MVP — adicionar no Plan/26 quando a UI
-  multi-Pi entrar
-- **Push de mudanças**: SDK não emite `commands_changed`, mas a extensão
-  pode emitir `commands_changed` no `session_start` (reason=reload) pra
-  app refrescar
-- **PR upstream**:
-  - Adicionar `BUILTIN_SLASH_COMMANDS` ao `exports` do package (1 linha)
-  - Adicionar `pi.invokeBuiltin(name, args)` à `ExtensionAPI`
-  - Quando merged, deletar o mirror local e atualizar a tabela
-    `INVOKABLE_BUILTINS`
+- **Abort/shutdown**: adicionar `session_abort` e `session_shutdown` se
+  user demandar. Shutdown precisa confirmação dupla.
+- **Cross-PC**: ações sobre Pis irmãos. Hoje app só age sobre o Pi
+  pareado direto. Cross-PC fica pro plan/26 quando UI de multi-Pi entrar.
+- **Models refresh manual**: pull-to-refresh no model picker chamando
+  `reg.refresh()` antes do retorno.
 - **Docs**:
-  - Atualizar `PROTOCOL.md` com seção definitiva
-  - Atualizar `pi-extension/README.md` mencionando suporte a slash commands no app
-  - Atualizar `site/` doc com screenshot/diagrama do picker
+  - `pi-extension/README.md` ganha seção "Mobile app actions"
+  - `site/` doc ganha screenshot do quick actions sheet
 
 **DoD Wave D**:
-- [ ] `/model` com sub-picker funcional
-- [ ] PR upstream aberto (link no plano)
+- [ ] Abort/shutdown decidido (incluído ou backloged explicitamente)
 - [ ] Docs atualizadas
 
 ---
 
 ## DoD consolidado
 
-- [ ] Wave 0: scout do SDK ✅
-- [ ] Wave A: tipos no protocolo + seção em PROTOCOL.md
-- [ ] Wave B Slice 1: handler `list_commands` + mirror + test
-- [ ] Wave B Slice 2: handler `command_invoke` + dispatch + test
-- [ ] Wave C: UI completa no app
-- [ ] Wave D: `/model` sub-picker, PR upstream, docs
+- [x] Wave 0: scout do SDK + pivot decidido
+- [x] Wave A: tipos no protocolo + seção em PROTOCOL.md
+- [x] Wave B: handlers + ModelRegistry + tests (388 → 399 tests pi-extension)
+- [x] Wave C: UI do app (bottom sheet + sub-picker + segmented). 11 arquivos, +46 tests (342 total), `flutter analyze` 0 issues, iOS build OK. Notas em `.orchestration/results/28-wave-c.md`
+- [x] Wave D.1 (pi-extension): thinking hydration via room_meta. `pi.on("thinking_level_select")` mirroring model handler + seed inicial via `pi.getThinkingLevel()` em `_cmdStart`. `_myRoomMeta` agora carrega `{model?, thinking?}`. tsc + 399 tests verdes.
+- [x] Wave D.3 (pi-extension README): nova seção "Mobile app actions" com tabela + nota sobre por que NÃO é picker genérico
+- [x] Wave D.4: bump 0.2.1 → **0.3.0** (Quick Actions feature complete)
+- [x] Wave D.2 (app): consumir `meta.thinking` + invalidar models cache em mudança externa. 365 tests (+23), `flutter analyze` 0 issues, iOS build OK. Notas em `.orchestration/results/28-wave-d-app.md`
+- [x] Wave D.3 (site): copy do site atualizada. lint+build verde, também corrigiu copy stale dos stores ("coming soon" → links reais). Notas em `.orchestration/results/28-wave-d-site.md`
+- [x] Wave D.6 (relay): propagar `meta.thinking` ponta-a-ponta. 76 cargo tests (+3), clippy clean. **Bonus**: refatorou `update_room_meta` pra semântica RFC 7396 de merge patch — corrige bug pré-existente que zerava silenciosamente campos ausentes. Notas em `.orchestration/results/28-wave-d-relay.md`. Nota arquitetural pendente: shape inconsistente entre `room_announced` (flat) e `room_meta_updated` (nested) — vira issue futura.
+
+### Notas pendentes
+
+3. **Flake test pré-existente** (`pending UserMsg survives WS reconnect`) falhou na primeira run da Wave C, ficou verde depois. Agent não tocou. Suspeito de timing flake — registrar pra observação.
+4. **`abort`/`shutdown` actions**: backloged. Adicionar quando user demandar; ambas precisam confirm dialog.
 
 ## Próximos planos
 
-- Plan 26 retomado: sessões cross-PC na UI (lista de comandos por sibling)
-- Plan upstream: PR `BUILTIN_SLASH_COMMANDS` + `invokeBuiltin` no SDK do Pi
+- Plan 26 retomado: ações sobre sessões cross-PC (lista de irmãos +
+  ação targetada)
+- PR upstream opcional: `pi.getModel()` + `pi.getActiveProvider()` se
+  ainda não existirem, pra reduzir o tracking via events no app

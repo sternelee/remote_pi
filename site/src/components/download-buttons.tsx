@@ -2,6 +2,8 @@ const GITHUB_RELEASES_URL =
   "https://github.com/jacobaraujo7/remote_pi/releases";
 const GOOGLE_PLAY_URL =
   "https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi";
+const APP_STORE_URL =
+  "https://apps.apple.com/app/remote-pi-coding-agent/id6773499691";
 
 export function DownloadButtons() {
   return (
@@ -17,8 +19,8 @@ export function DownloadButtons() {
         platform="App Store"
         label="DOWNLOAD ON THE"
         icon={<AppStoreIcon />}
-        disabled
-        sublabel="Coming soon"
+        href={APP_STORE_URL}
+        sublabel="Now available"
       />
       <StoreButton
         platform="Android APK"
