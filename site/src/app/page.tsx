@@ -9,7 +9,7 @@ const features = [
   {
     title: "Phone is just the authenticator",
     description:
-      "Scan a QR once to bring a machine into your mesh. After that the PCs operate on their own — pair multiple phones to the same Owner key and they stay in sync.",
+      "Scan a QR once to add a machine. The PCs run on their own after that; extra phones share one Owner key and stay in sync.",
     icon: <ShieldIcon />,
   },
   {
@@ -20,8 +20,8 @@ const features = [
         <code className="rounded bg-bg/60 px-1 py-0.5 font-mono text-xs text-fg">
           /remote-pi
         </code>
-        . The envelope protocol is harness-agnostic, so Claude Code or
-        OpenCode can join the mesh as adapters land.
+        . The protocol is harness-agnostic — Claude Code and OpenCode join as
+        adapters land.
       </>
     ),
     icon: <TerminalIcon />,
@@ -29,25 +29,25 @@ const features = [
   {
     title: "Mesh across machines",
     description:
-      "Local UDS broker for same-machine peers, relay for cross-PC. Every box paired to the same Owner key is one logical mesh — no central server.",
+      "UDS broker on the same machine, relay across PCs. One Owner key, one mesh — no central server.",
     icon: <MeshIcon />,
   },
   {
     title: "Talk instead of type",
     description:
-      "Dictate prompts with on-device speech-to-text — your voice becomes a message right on the phone, no cloud transcription step.",
+      "Dictate prompts with on-device speech-to-text. No cloud transcription step.",
     icon: <VoiceIcon />,
   },
   {
     title: "Attach an image",
     description:
-      "Snap a photo or pick one from your gallery and send it straight to a multimodal agent — screenshots, diagrams, a whiteboard shot.",
+      "Send a photo or screenshot straight to a multimodal agent.",
     icon: <ImageIcon />,
   },
   {
     title: "Open source, self-hostable",
     description:
-      "MIT licensed. Run your own relay behind a VPN for full confidentiality from the relay operator — same protocol, same client.",
+      "MIT licensed. Self-host the relay behind a VPN for full confidentiality from the operator.",
     icon: <SparkIcon />,
   },
 ];
@@ -84,9 +84,8 @@ export default function Home() {
               Pair your phones, drive the mesh.
             </h2>
             <p className="mx-auto max-w-xl text-pretty text-base leading-relaxed text-muted">
-              Your phone is the authenticator and the remote control. Get it
-              now on the App Store and Google Play, or grab the latest Android
-              APK straight from GitHub Releases.
+              The authenticator and the remote control. On the App Store,
+              Google Play, or as an Android APK on GitHub.
             </p>
           </div>
           <DownloadButtons />
@@ -106,7 +105,7 @@ export default function Home() {
               id="features-heading"
               className="max-w-2xl text-balance text-3xl font-semibold tracking-tight text-fg sm:text-4xl"
             >
-              Built for people who run coding agents on more than one box.
+              Built for running coding agents on more than one box.
             </h2>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -140,17 +139,14 @@ export default function Home() {
                 Keep your agents alive 24/7.
               </h2>
               <p className="text-base leading-relaxed text-muted">
-                Pair, configure, install, walk away. A single supervisor per
-                machine turns every paired folder into a background agent that
-                survives logout, restarts on crash, and answers any device on
-                the mesh at 3am. systemd on Linux, launchd on macOS, one CLI
-                to manage the fleet.
+                One supervisor per machine turns any paired folder into a
+                background agent — survives logout, restarts on crash, answers
+                the mesh at 3am. launchd on macOS, systemd on Linux.
               </p>
               <p className="rounded-xl border border-border-soft bg-bg/60 px-4 py-3 text-sm leading-relaxed text-muted">
                 <strong className="text-fg">Heads up:</strong> daemons inherit
                 your Pi tool permissions — Bash, Edit, Write run without
-                prompts. Lock those down before promoting a folder. A
-                tool-approval gate ships in a follow-up plan.
+                prompts. Lock those down before promoting a folder.
               </p>
               <a
                 href="/docs#daemon-mode"
@@ -164,25 +160,25 @@ export default function Home() {
                 n={1}
                 title="Pair the folder"
                 command="/remote-pi pair"
-                description="Configure the agent interactively first — keys, paired devices, relay URL all live in the cwd."
+                description="Run the wizard and scan the QR. Keys and paired devices live in the cwd."
               />
               <DaemonStep
                 n={2}
-                title="Promote to daemon"
-                command='remote-pi create ~/Movies --name "Video Editor"'
-                description="Register the folder. The id is a stable hash of the path so it survives moves."
+                title="Install the supervisor"
+                command="/remote-pi install"
+                description="Once per machine — installs the user-level service (launchd/systemd) and links the remote-pi CLI into ~/.local/bin/."
               />
               <DaemonStep
                 n={3}
-                title="Install the supervisor"
-                command="/remote-pi install"
-                description="From inside Pi — installs the user-level service (launchd/systemd) and links remote-pi + pi-supervisord into ~/.local/bin/."
+                title="Create the daemon"
+                command='remote-pi create ~/Movies --name "Video Editor"'
+                description="Registers the folder and starts it right away. Auto-restarts on crash, comes back on reboot."
               />
               <DaemonStep
                 n={4}
-                title="Walk away"
-                command="remote-pi daemon start"
-                description="The fleet is alive. Send prompts, restart, or stop everything from a single CLI."
+                title="Manage the fleet"
+                command="remote-pi daemons"
+                description="List daemons, check status, send prompts, or stop the lot — one CLI."
               />
             </ol>
           </div>
@@ -206,8 +202,7 @@ export default function Home() {
               Three steps from zero to mesh.
             </h2>
             <p className="text-base leading-relaxed text-muted">
-              No accounts, no email, no SaaS sign-up. Install the extension on
-              every machine that runs an agent, scan a QR from your phone once,
+              No accounts, no sign-up. Install the extension, scan a QR once,
               and the mesh is alive.
             </p>
             <a
@@ -232,8 +227,8 @@ export default function Home() {
             Ready to mesh your agents?
           </h2>
           <p className="max-w-xl text-pretty text-base leading-relaxed text-muted">
-            Remote Pi is in active MVP. Read the source, run the envelope
-            protocol, or self-host the relay — everything is on GitHub.
+            Active MVP. Read the source, run the protocol, or self-host the
+            relay — it&apos;s all on GitHub.
           </p>
           <a
             href={GITHUB_URL}

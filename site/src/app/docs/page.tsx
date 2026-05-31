@@ -25,7 +25,7 @@ export default function DocsPage() {
   return (
     <DocsShell
       title="Remote Pi docs"
-      lastUpdated="2026-05-30"
+      lastUpdated="2026-05-31"
       sidebar={<DocsToc />}
       intro={
         <p>
@@ -49,9 +49,9 @@ export default function DocsPage() {
         <CodeBlock code="/remote-pi" label="In Pi" language="text" />
         <p>
           The first run shows a short interactive wizard (agent name, whether
-          to use the relay, whether to enable daemon mode). On every following
-          run, <InlineCode>/remote-pi</InlineCode> joins the local mesh and
-          starts the relay automatically — no extra typing.
+          to use the relay). On every following run,{" "}
+          <InlineCode>/remote-pi</InlineCode> joins the local mesh and starts
+          the relay automatically — no extra typing.
         </p>
 
         <DocsSubsection id="agent-network-30s" title="Try the agent network in 30 seconds">
@@ -277,8 +277,8 @@ export default function DocsPage() {
           (launchd on macOS, <InlineCode>systemd --user</InlineCode> on Linux)
           and symlinks the <InlineCode>remote-pi</InlineCode> +{" "}
           <InlineCode>pi-supervisord</InlineCode> CLIs into{" "}
-          <InlineCode>~/.local/bin/</InlineCode>. The setup wizard also
-          offers to do this on first run. See{" "}
+          <InlineCode>~/.local/bin/</InlineCode>. It&apos;s a separate opt-in,
+          not part of the setup wizard. See{" "}
           <a href="#daemon-mode" className="text-accent underline">
             Daemon mode
           </a>{" "}
@@ -310,7 +310,7 @@ export default function DocsPage() {
             ],
           ]}
         />
-        <p>The wizard asks three questions:</p>
+        <p>The wizard asks two questions:</p>
         <ol className="ml-6 list-decimal space-y-2">
           <li>
             <strong className="text-fg">Agent name</strong> — how other peers
@@ -326,20 +326,14 @@ export default function DocsPage() {
             <InlineCode>No</InlineCode> keeps it local-only (agent network on
             the same machine, no mobile or cross-PC reach).
           </li>
-          <li>
-            <strong className="text-fg">Enable daemon mode?</strong> —{" "}
-            <InlineCode>Yes</InlineCode> installs the supervisor service
-            (launchd/systemd <InlineCode>--user</InlineCode>) and symlinks the{" "}
-            <InlineCode>remote-pi</InlineCode> +{" "}
-            <InlineCode>pi-supervisord</InlineCode> CLIs into{" "}
-            <InlineCode>~/.local/bin/</InlineCode> so this folder can run as a
-            24/7 background agent. <InlineCode>No</InlineCode> skips the
-            service install; you can opt in later with{" "}
-            <InlineCode>/remote-pi install</InlineCode>.
-          </li>
         </ol>
         <p>
-          Re-run the wizard later with <InlineCode>/remote-pi setup</InlineCode>.
+          Re-run the wizard later with <InlineCode>/remote-pi setup</InlineCode>.{" "}
+          Daemon mode is a separate opt-in — see{" "}
+          <a href="#daemon-mode" className="text-accent underline">
+            Daemon mode
+          </a>
+          .
         </p>
       </DocsSection>
 
@@ -700,10 +694,8 @@ agent_send({ to: "MacMini:agent-1", body: { ... } })
 
         <DocsSubsection id="daemon-prereq" title="One-time setup">
           <p>
-            The setup wizard&apos;s third question (
-            <em>Enable daemon mode?</em>) does this for you on first run. If
-            you answered <InlineCode>No</InlineCode> or want to opt in later,
-            run from inside Pi:
+            Daemon mode is an explicit opt-in, separate from the setup wizard.
+            Run once per machine, from inside Pi:
           </p>
           <CodeBlock
             code="/remote-pi install"
@@ -742,13 +734,12 @@ agent_send({ to: "MacMini:agent-1", body: { ... } })
 cd ~/Movies
 pi                                 # /remote-pi → setup wizard, /remote-pi pair, etc
 
-# 2. Promote to a daemon. The id is derived from the cwd
-#    (sha256(realpath)[:8]), stable across machines.
+# 2. Register it as a daemon. Needs '/remote-pi install' first (see
+#    One-time setup above). The id is sha256(realpath)[:8], stable
+#    across machines. With the supervisor running, it starts right
+#    away — no separate start step.
 remote-pi create ~/Movies --name "Video Editor"
-# → Daemon registered: id=4e39152d name="Video Editor" cwd=/Users/x/Movies
-
-# 3. Start it (supervisor spawns 'pi --mode rpc' for this folder).
-remote-pi daemon start`}
+# → Daemon registered: id=4e39152d name="Video Editor" cwd=/Users/x/Movies · started`}
             label="Per-folder flow"
             language="bash"
           />

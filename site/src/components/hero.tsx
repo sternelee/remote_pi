@@ -23,8 +23,7 @@ export function Hero() {
           </h1>
           <p className="max-w-2xl text-pretty text-lg leading-relaxed text-muted sm:text-xl">
             Your coding agents talk to each other across every machine you work
-            from. Your phone is just the authenticator — scan a QR once and the
-            mesh runs by itself. Fully open source.
+            from.
           </p>
         </div>
         <div className="mt-2 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
