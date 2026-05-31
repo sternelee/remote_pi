@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
 
@@ -22,16 +23,15 @@ export function Hero() {
             Remote Pi
           </h1>
           <p className="max-w-2xl text-pretty text-lg leading-relaxed text-muted sm:text-xl">
-            Your coding agents talk to each other across every machine you work
-            from.
+            Control all your agents from your phone — at once.
           </p>
         </div>
         <div className="mt-2 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
           <a
-            href="#quick-start"
+            href="#install"
             className="inline-flex h-11 items-center justify-center rounded-full bg-accent px-6 text-sm font-semibold text-black transition-opacity hover:opacity-90"
           >
-            Install on Pi
+            Install
           </a>
           <a
             href={GITHUB_URL}
@@ -42,6 +42,12 @@ export function Hero() {
             View on GitHub
           </a>
         </div>
+        <Link
+          href="/why"
+          className="text-sm font-medium text-muted underline-offset-4 transition-colors hover:text-fg hover:underline"
+        >
+          Why Pi? →
+        </Link>
       </div>
     </section>
   );

@@ -12,7 +12,7 @@ import { CodeBlock } from "@/components/code-block";
 export const metadata: Metadata = {
   title: "Docs",
   description:
-    "How to install Remote Pi, pair a mobile device, run an agent network, and self-host the relay.",
+    "Reference for Remote Pi: the relay, protocol & security, the full command reference, configuration files, and troubleshooting.",
 };
 
 const GITHUB_URL = "https://github.com/jacobaraujo7/remote_pi";
@@ -29,402 +29,151 @@ export default function DocsPage() {
       sidebar={<DocsToc />}
       intro={
         <p>
-          Remote Pi is a mesh for coding agents. Agents on the same machine
-          talk through a local UDS broker; agents on different machines reach
-          each other through an open-source relay; your phone authenticates
-          new peers into the mesh and stays in sync across iOS and Android.
-          The first supported harness is the{" "}
+          This is the <strong className="text-fg">reference</strong>. Remote Pi
+          is a mesh for coding agents: agents on the same machine talk through a
+          local UDS broker, agents on different machines reach each other
+          through an open-source relay, and your phone authenticates new peers
+          and drives sessions. The first supported harness is the{" "}
           <a className="text-accent underline" href={PI_URL} target="_blank" rel="noopener noreferrer">
             Pi coding agent
           </a>
-          ; <InlineCode>/remote-pi</InlineCode> is the single slash command
-          that wires everything up.
+          ; <InlineCode>/remote-pi</InlineCode> wires everything up. To{" "}
+          <strong className="text-fg">learn by doing</strong>, start with the{" "}
+          <Link href="/tutorials" className="text-accent underline">
+            tutorials
+          </Link>
+          ; for <strong className="text-fg">why</strong> it works this way, see{" "}
+          <Link href="/why" className="text-accent underline">
+            Why Pi
+          </Link>
+          . The pages below are for looking things up.
         </p>
       }
     >
+      {/* ── Pointers into the tutorials ─────────────────────────────────── */}
+
       <DocsSection id="quick-start" title="Quick start">
-        <p>Install the extension (one-time):</p>
-        <CodeBlock code="pi install npm:remote-pi" label="On your Pi" language="bash" />
-        <p>Then in any Pi terminal:</p>
-        <CodeBlock code="/remote-pi" label="In Pi" language="text" />
         <p>
-          The first run shows a short interactive wizard (agent name, whether
-          to use the relay). On every following run,{" "}
-          <InlineCode>/remote-pi</InlineCode> joins the local mesh and starts
-          the relay automatically — no extra typing.
-        </p>
-
-        <DocsSubsection id="agent-network-30s" title="Try the agent network in 30 seconds">
-          <p>
-            Open <strong className="text-fg">two</strong> Pi terminals in two{" "}
-            <strong className="text-fg">different</strong> directories — one
-            Pi process per cwd is enforced by a lock. Run{" "}
-            <InlineCode>/remote-pi</InlineCode> in each and both join the same
-            local mesh automatically (every machine has a single session
-            named <InlineCode>local</InlineCode>). Now just talk to the LLM —
-            it has the tools.
-          </p>
-          <p>
-            In terminal A (say it ended up named <InlineCode>agent-A</InlineCode>):
-          </p>
-          <CodeBlock
-            code="List the other agents available."
-            label="agent-A · prompt"
-            language="text"
-          />
-          <p>
-            The LLM calls{" "}
-            <InlineCode>list_peers()</InlineCode> and gets back something
-            like{" "}
-            <InlineCode>{`{ peers: ["agent-B"] }`}</InlineCode> (synchronous,
-            ms-latency).
-          </p>
-          <p>Then, still in terminal A:</p>
-          <CodeBlock
-            code="Send a ping to agent-B."
-            label="agent-A · prompt"
-            language="text"
-          />
-          <p>
-            The LLM calls{" "}
-            <InlineCode>{`agent_send({ to: "agent-B", body: { type: "ping" } })`}</InlineCode>{" "}
-            and immediately gets back{" "}
-            <InlineCode>{`{ status: "received" }`}</InlineCode> (the ACK). The
-            message lands in terminal B&apos;s inbox; its LLM sees the new
-            envelope on its next turn and decides whether to reply by calling{" "}
-            <InlineCode>{`agent_send({ to: "agent-A", re: "<id>", body: ... })`}</InlineCode>.
-            Agent A then sees the reply on a future turn — fully event-driven,
-            nothing blocks.
-          </p>
-          <p className="text-sm">
-            (Replace <InlineCode>agent-B</InlineCode> with whatever name
-            terminal B reports for itself — the wizard&apos;s default is the
-            parent folder name with a <InlineCode>#N</InlineCode> suffix on
-            collision.)
-          </p>
-        </DocsSubsection>
-      </DocsSection>
-
-      <DocsSection id="what-it-does" title="What it does">
-        <p>
-          Remote Pi sits on top of Pi (the first supported harness) and adds
-          two independent layers. You can use either, or both.
-        </p>
-
-        <DocsSubsection id="agent-network-layer" title="1) Agent network (same machine and across PCs)">
-          <p>
-            Agents running side-by-side in different terminals discover each
-            other and exchange messages. Each agent is a peer in the local
-            mesh and gets three tools the LLM can call directly:
-          </p>
-          <ul className="ml-6 list-disc space-y-2">
-            <li>
-              <InlineCode>list_peers()</InlineCode> — synchronous, returns{" "}
-              <InlineCode>{`{ peers: string[] }`}</InlineCode>. Locals plus
-              cross-PC entries prefixed with the source PC&apos;s label (e.g.{" "}
-              <InlineCode>MacMini:agent-1</InlineCode>).
-            </li>
-            <li>
-              <InlineCode>agent_send({`{ to, body, re? }`})</InlineCode> —
-              unicast with ACK. Returns{" "}
-              <InlineCode>{`{ status: "received" | "busy" | "denied" | "timeout" | "sent" }`}</InlineCode>{" "}
-              within ~5s. Set <InlineCode>re</InlineCode> when replying to an
-              earlier message.
-            </li>
-            <li>
-              <InlineCode>agent_request</InlineCode> —{" "}
-              <strong className="text-fg">deprecated</strong>. Synchronous
-              send-and-await wrapper kept for backward compatibility; emits a
-              warning on first call. New agents use{" "}
-              <InlineCode>agent_send</InlineCode> and observe the inbox in a
-              future turn.
-            </li>
-          </ul>
-          <p>
-            On the same machine, peers talk through a Unix domain socket at{" "}
-            <InlineCode>~/.pi/remote/sessions/local/broker.sock</InlineCode>{" "}
-            — no network involved. Across machines, the same{" "}
-            <InlineCode>agent_send</InlineCode> routes through the relay
-            automatically: every PC paired to the same Owner key forms one
-            logical mesh, and a remote peer is addressed verbatim by its
-            prefixed name (e.g.{" "}
-            <InlineCode>{`agent_send({ to: "MacMini:agent-1", ... })`}</InlineCode>).
-            Useful for splitting work across roles
-            (<InlineCode>backend</InlineCode>, <InlineCode>frontend</InlineCode>,{" "}
-            <InlineCode>tests</InlineCode>, <InlineCode>orchestrator</InlineCode>, …)
-            and letting them coordinate, whether they live on the same box or
-            on machines that only meet on the relay.
-          </p>
-          <p>
-            On any given machine, the first agent in the session becomes the{" "}
-            <em>leader</em> (hosts the broker); the rest are{" "}
-            <em>followers</em>. If the leader exits, a follower automatically
-            takes over — the failover is invisible to the LLMs.
-          </p>
-        </DocsSubsection>
-
-        <DocsSubsection id="mobile-app-layer" title="2) Mobile control plane (authenticator + remote)">
-          <p>
-            The mobile app is the authenticator and the remote control. You
-            scan a QR once to bring a new machine into your mesh (or to add a
-            new phone to your Owner key); from that point on the apps and PCs
-            coordinate over the same{" "}
-            <strong className="text-fg">relay</strong> — a small WebSocket
-            server that ferries messages between paired peers. Multiple phones
-            paired to the same Owner key stay in sync; multiple Owners can
-            pair the same machine without colliding. Beyond chat, a paired
-            phone can drive the session with a few typed{" "}
-            <a href="#quick-actions" className="text-accent underline">
-              quick actions
-            </a>{" "}
-            — compact, new session, switch model or thinking level.
-          </p>
-          <p>
-            <strong className="text-fg">Trust model (current MVP).</strong>{" "}
-            Connections to the relay are TLS 1.3. Devices authenticate each
-            other with Ed25519 challenge-response at pairing time, so paired
-            peers can verify identity cryptographically.{" "}
-            <strong className="text-fg">
-              Application-layer end-to-end encryption of message payloads is
-              not active in the current MVP
-            </strong>{" "}
-            — payloads travel base64-encoded over TLS, and the relay operator
-            could in principle access plaintext in memory while forwarding. The
-            public relay (operated by Flutterando) does not log, persist, or
-            inspect payloads. If you need cryptographic confidentiality from
-            the relay operator, run your own relay — see{" "}
-            <a href="#relay" className="text-accent underline">
-              The relay
-            </a>{" "}
-            below for a self-host guide. Restoring per-message E2E encryption
-            is on the roadmap.{" "}
-            <a
-              className="text-accent underline"
-              href={`${GITHUB_URL}/blob/main/PROTOCOL.md`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              PROTOCOL.md
-            </a>{" "}
-            is the source of truth for the wire format, identity model, ACK
-            semantics, and failure modes — read it when this page disagrees
-            with itself.
-          </p>
-          <p>App downloads:</p>
-          <ul className="ml-6 list-disc space-y-2">
-            <li>
-              <strong className="text-fg">Google Play</strong> —{" "}
-              <a
-                className="text-accent underline"
-                href="https://play.google.com/store/apps/details?id=work.jacobmoura.remotepi"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Get it on Google Play
-              </a>
-            </li>
-            <li>
-              <strong className="text-fg">App Store</strong> —{" "}
-              <a
-                className="text-accent underline"
-                href="https://apps.apple.com/app/remote-pi-coding-agent/id6773499691"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Download on the App Store
-              </a>
-            </li>
-            <li>
-              <strong className="text-fg">Android APK</strong> — direct download from the{" "}
-              <a className="text-accent underline" href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener noreferrer">
-                GitHub Releases page
-              </a>
-              .
-            </li>
-          </ul>
-          <p>
-            Prefer to sideload or build it yourself? Follow{" "}
-            <a className="text-accent underline" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-              the repo
-            </a>{" "}
-            for build info and APK releases.
-          </p>
-        </DocsSubsection>
-      </DocsSection>
-
-      <DocsSection id="install" title="Install">
-        <p>
-          Requirements: Node 20+ and Pi (the host coding agent).
-        </p>
-        <CodeBlock code="pi install npm:remote-pi" label="Install" language="bash" />
-        <p>
-          The extension self-registers the <InlineCode>/remote-pi</InlineCode>{" "}
-          slash command and deploys an agent skill that teaches the LLM how to
-          use <InlineCode>list_peers</InlineCode> /{" "}
-          <InlineCode>agent_send</InlineCode>.
-        </p>
-        <p>To verify:</p>
-        <CodeBlock code="/remote-pi config" label="In Pi" language="text" />
-        <p>
-          It should print the effective relay URL and where it came from
-          (<InlineCode>env</InlineCode> / <InlineCode>config</InlineCode> /{" "}
-          <InlineCode>default</InlineCode>).
+          Install the plugin, run the setup wizard, and pair your phone in a few
+          commands — then send your first prompt from the app. The full
+          walkthrough, including the mobile side, is a tutorial.
         </p>
         <p>
-          <strong className="text-fg">Planning to use daemon mode?</strong>{" "}
-          Run <InlineCode>/remote-pi install</InlineCode> from inside Pi when
-          you&apos;re ready — it installs the user-level supervisor service
-          (launchd on macOS, <InlineCode>systemd --user</InlineCode> on Linux)
-          and symlinks the <InlineCode>remote-pi</InlineCode> +{" "}
-          <InlineCode>pi-supervisord</InlineCode> CLIs into{" "}
-          <InlineCode>~/.local/bin/</InlineCode>. It&apos;s a separate opt-in,
-          not part of the setup wizard. See{" "}
-          <a href="#daemon-mode" className="text-accent underline">
-            Daemon mode
-          </a>{" "}
-          for the full flow.
-        </p>
-      </DocsSection>
-
-      <DocsSection id="using-remote-pi" title="Using /remote-pi">
-        <p>The bare command is the everyday entry point:</p>
-        <CodeBlock code="/remote-pi" label="In Pi" language="text" />
-        <p>
-          Behavior depends on whether there&apos;s a local config for this
-          directory:
-        </p>
-        <DocsTable
-          headers={["State", "What happens"]}
-          rows={[
-            [
-              <>First run (no <InlineCode>.pi/remote-pi/config.json</InlineCode>)</>,
-              "Interactive wizard → saves config → joins local mesh → starts relay (if you opted in)",
-            ],
-            [
-              "Returning user, auto-start enabled",
-              "Joins local mesh + starts relay automatically, then prints status",
-            ],
-            [
-              "Returning user, auto-start disabled",
-              "Prints status only; mesh/relay must be re-enabled via /remote-pi setup",
-            ],
-          ]}
-        />
-        <p>The wizard asks two questions:</p>
-        <ol className="ml-6 list-decimal space-y-2">
-          <li>
-            <strong className="text-fg">Agent name</strong> — how other peers
-            address you in <InlineCode>list_peers()</InlineCode> and{" "}
-            <InlineCode>agent_send</InlineCode>. Defaults to the parent folder
-            of the current cwd, with a <InlineCode>#N</InlineCode> suffix on
-            collision.
-          </li>
-          <li>
-            <strong className="text-fg">Use the relay on this terminal?</strong>{" "}
-            — <InlineCode>Yes</InlineCode> connects this Pi to the remote
-            mesh (mobile app + cross-PC peers via the relay).{" "}
-            <InlineCode>No</InlineCode> keeps it local-only (agent network on
-            the same machine, no mobile or cross-PC reach).
-          </li>
-        </ol>
-        <p>
-          Re-run the wizard later with <InlineCode>/remote-pi setup</InlineCode>.{" "}
-          Daemon mode is a separate opt-in — see{" "}
-          <a href="#daemon-mode" className="text-accent underline">
-            Daemon mode
-          </a>
+          →{" "}
+          <Link href="/tutorials/getting-started" className="text-accent underline">
+            See the Getting started tutorial
+          </Link>
           .
         </p>
       </DocsSection>
 
+      <DocsSection id="what-it-does" title="What it does">
+        <p>
+          Remote Pi adds two independent layers on top of Pi. The{" "}
+          <strong className="text-fg">agent network</strong> lets agents
+          discover and message each other — over a local socket on one machine,
+          or through the relay across PCs. The{" "}
+          <strong className="text-fg">mobile control plane</strong> is your
+          phone: it authenticates new peers into the mesh and drives sessions.
+          Each is covered hands-on:
+        </p>
+        <ul className="ml-6 list-disc space-y-2">
+          <li>
+            <Link href="/tutorials/mesh-local" className="text-accent underline">
+              Local mesh
+            </Link>{" "}
+            — agents discovering and messaging on the same machine.
+          </li>
+          <li>
+            <Link href="/tutorials/mesh-remote" className="text-accent underline">
+              Remote mesh
+            </Link>{" "}
+            — routing between agents on different PCs.
+          </li>
+          <li>
+            <Link href="/tutorials/getting-started" className="text-accent underline">
+              Getting started
+            </Link>{" "}
+            — pairing your phone and driving an agent from it.
+          </li>
+        </ul>
+      </DocsSection>
+
+      <DocsSection id="install" title="Install">
+        <p>
+          Requirements: Node 20+ and Pi (the host coding agent). Remote Pi
+          installs as a Pi plugin with{" "}
+          <InlineCode>pi install npm:remote-pi</InlineCode>, which self-registers
+          the <InlineCode>/remote-pi</InlineCode> slash command and deploys the
+          agent-network skill. The complete setup — wizard, pairing, first
+          command — is in the tutorial.
+        </p>
+        <p>
+          →{" "}
+          <Link href="/tutorials/getting-started" className="text-accent underline">
+            See the Getting started tutorial
+          </Link>
+          . Daemon mode has its own one-time install — see{" "}
+          <a href="#daemon-mode" className="text-accent underline">
+            Daemon mode
+          </a>{" "}
+          below.
+        </p>
+      </DocsSection>
+
+      <DocsSection id="using-remote-pi" title="Using /remote-pi">
+        <p>
+          <InlineCode>/remote-pi</InlineCode> is the everyday entry point. The
+          first run opens a short wizard (agent name, whether to use the relay)
+          that creates the per-folder config; later runs join the local mesh and
+          start the relay automatically. Re-run the wizard with{" "}
+          <InlineCode>/remote-pi setup</InlineCode>. Every subcommand is in the{" "}
+          <a href="#commands" className="text-accent underline">
+            command reference
+          </a>
+          .
+        </p>
+        <p>
+          →{" "}
+          <Link href="/tutorials/getting-started" className="text-accent underline">
+            See the Getting started tutorial
+          </Link>{" "}
+          for the guided flow.
+        </p>
+      </DocsSection>
+
       <DocsSection id="pairing" title="Pairing a mobile device">
-        <p>You can call <InlineCode>/remote-pi pair</InlineCode> directly:</p>
-        <CodeBlock code="/remote-pi pair" label="In Pi" language="text" />
         <p>
-          If mesh and relay aren&apos;t running but a config exists,{" "}
-          <InlineCode>pair</InlineCode> auto-bootstraps them before printing
-          the QR. If no config exists yet (first time on this folder), the
-          command tells you to run <InlineCode>/remote-pi</InlineCode> first
-          to go through the wizard. The QR is only printed once the relay is
-          actually connected.
-        </p>
-        <p>
-          Scan the QR with the Remote Pi mobile app. Pairing is{" "}
+          <InlineCode>/remote-pi pair</InlineCode> prints a QR (and a copy-paste
+          URI); scan it with the Remote Pi app. Pairing is{" "}
           <strong className="text-fg">per machine</strong> — once a device is
-          paired, every Pi process on this machine accepts it (it lives in{" "}
-          <InlineCode>~/.pi/remote/peers.json</InlineCode>).
+          paired, every Pi process on that machine accepts it. Manage devices
+          with <InlineCode>/remote-pi devices</InlineCode> and{" "}
+          <InlineCode>/remote-pi revoke &lt;shortid&gt;</InlineCode> (see the{" "}
+          <a href="#commands" className="text-accent underline">
+            command reference
+          </a>
+          ).
         </p>
-        <p>To list paired devices:</p>
-        <CodeBlock code="/remote-pi devices" label="In Pi" language="text" />
-        <p>To remove one:</p>
-        <CodeBlock code="/remote-pi revoke <shortid>" label="In Pi" language="text" />
         <p>
-          The shortid is the first 8 chars shown by{" "}
-          <InlineCode>devices</InlineCode>.
+          →{" "}
+          <Link href="/tutorials/getting-started" className="text-accent underline">
+            See the Getting started tutorial
+          </Link>
+          .
         </p>
       </DocsSection>
 
       <DocsSection id="quick-actions" title="Quick actions from the phone">
         <p>
-          Beyond chatting, the mobile app can drive the paired Pi session with
-          a small set of <strong className="text-fg">typed actions</strong>.
-          This is a curated vocabulary — not a generic slash-command picker.
-          Each action maps to a public SDK call on the pi-extension side, so
-          the app never has to parse or mirror Pi&apos;s command surface; you
-          tap a control and the host does the rest.
-        </p>
-        <DocsTable
-          headers={["Action", "What it does"]}
-          rows={[
-            [
-              <strong key="t" className="text-fg">
-                Compact context
-              </strong>,
-              "Summarize the session history in place to reclaim context window — the same as running /compact on the host.",
-            ],
-            [
-              <strong key="t" className="text-fg">
-                New session
-              </strong>,
-              "Start a fresh session on the same paired machine, without touching the pairing.",
-            ],
-            [
-              <strong key="t" className="text-fg">
-                Set model
-              </strong>,
-              "Switch the active model. The app fetches the models that host can actually run, then sends your pick.",
-            ],
-            [
-              <strong key="t" className="text-fg">
-                Set thinking
-              </strong>,
-              <>
-                Change the reasoning effort level: <InlineCode>off</InlineCode>,{" "}
-                <InlineCode>minimal</InlineCode>, <InlineCode>low</InlineCode>,{" "}
-                <InlineCode>medium</InlineCode>, <InlineCode>high</InlineCode>,
-                or <InlineCode>xhigh</InlineCode>.
-              </>,
-            ],
-          ]}
-        />
-        <p>
-          <strong className="text-fg">Thinking levels</strong> are a fixed
-          enum. <InlineCode>xhigh</InlineCode> is only honored by model
-          families that support it (e.g. Anthropic 4.x reasoning, OpenAI
-          o-series); on other models Pi quietly falls back to the nearest
-          supported level rather than erroring.
-        </p>
-        <p>
-          Actions are acknowledged as soon as they&apos;re dispatched — the
-          visible effect then arrives through the normal channels. A compact
-          lands as chat output, a model switch broadcasts to every connected
-          phone, and a new session reports a fresh start time. The model picker
-          is read live from the host, so it always reflects what that machine
-          can run.
-        </p>
-        <p>
-          The full action vocabulary, wire format, and fallback semantics live
-          in{" "}
+          Beyond chatting, the app drives a session with a small set of typed
+          actions — <strong className="text-fg">compact context</strong>,{" "}
+          <strong className="text-fg">new session</strong>,{" "}
+          <strong className="text-fg">set model</strong>, and{" "}
+          <strong className="text-fg">set thinking</strong> level. The model
+          picker reads live from the host, so it always reflects what that
+          machine can run. The full vocabulary, wire format, and fallback
+          semantics live in{" "}
           <a
             className="text-accent underline"
             href={`${GITHUB_URL}/blob/main/PROTOCOL.md`}
@@ -435,20 +184,85 @@ export default function DocsPage() {
           </a>{" "}
           (the <em>App actions</em> section).
         </p>
+        <p>
+          →{" "}
+          <Link href="/tutorials/getting-started" className="text-accent underline">
+            See the Getting started tutorial
+          </Link>
+          .
+        </p>
       </DocsSection>
+
+      <DocsSection id="agent-network" title="Agent network">
+        <p>
+          Each agent is a peer in a mesh. The LLM gets three tools —{" "}
+          <InlineCode>list_peers</InlineCode> (who is online),{" "}
+          <InlineCode>agent_send</InlineCode> (send with an ACK), and{" "}
+          <InlineCode>get_messages</InlineCode> (drain the inbox). On one
+          machine, peers talk over a Unix-domain-socket broker; across machines,
+          the same <InlineCode>agent_send</InlineCode> routes through the relay,
+          addressing remote peers as <InlineCode>pc_label:peer</InlineCode>. Both
+          paths are covered hands-on:
+        </p>
+        <ul className="ml-6 list-disc space-y-2">
+          <li>
+            <Link href="/tutorials/mesh-local" className="text-accent underline">
+              Local mesh
+            </Link>{" "}
+            — the broker, the three tools, a concrete exchange.
+          </li>
+          <li>
+            <Link href="/tutorials/mesh-remote" className="text-accent underline">
+              Remote mesh
+            </Link>{" "}
+            — cross-PC addressing and what an ACK does (and doesn&apos;t)
+            guarantee.
+          </li>
+        </ul>
+      </DocsSection>
+
+      <DocsSection id="daemon-mode" title="Daemon mode">
+        <p>
+          Promote a folder to a 24/7 background agent: run{" "}
+          <InlineCode>/remote-pi install</InlineCode> once per machine to install
+          the supervisor (launchd on macOS,{" "}
+          <InlineCode>systemd --user</InlineCode> on Linux) and link the CLI,
+          then <InlineCode>remote-pi create &lt;folder&gt; --name &quot;…&quot;</InlineCode>{" "}
+          to register and start a daemon. One supervisor per machine, N daemons
+          under it. Every command is in the{" "}
+          <a href="#commands" className="text-accent underline">
+            command reference
+          </a>{" "}
+          below.
+        </p>
+        <p>
+          → <Link href="/tutorials/daemon" className="text-accent underline">
+            See the Daemon mode tutorial
+          </Link>{" "}
+          for the full how-to; the <em>why</em> (and how it compares to
+          all-in-one platforms) is{" "}
+          <Link href="/why" className="text-accent underline">
+            Why Pi
+          </Link>
+          .
+        </p>
+      </DocsSection>
+
+      {/* ── Reference ───────────────────────────────────────────────────── */}
 
       <DocsSection id="relay" title="The relay">
         <p>
           The relay is the only network-touching piece of Remote Pi. In the
-          current MVP it sees both message payloads (forwarded but never
-          logged or inspected by the community operator) and connection
-          metadata: which keypair is online, which room/cwd identifiers
-          exist, message timing, sizes. Application-layer end-to-end
-          encryption of payloads is on the roadmap — see the{" "}
-          <a href="#mobile-app-layer" className="text-accent underline">
-            trust model
+          current MVP it sees both message payloads (forwarded but never logged
+          or inspected by the community operator) and connection metadata: which
+          keypair is online, which room/cwd identifiers exist, message timing,
+          sizes. Traffic is encrypted in transit (TLS) and peers authenticate
+          with Ed25519 pairing, but payloads are not encrypted at the
+          application layer — see{" "}
+          <a href="#protocol" className="text-accent underline">
+            Protocol &amp; Security
           </a>{" "}
-          above and the Privacy Policy, section 9, for the full picture.
+          and the Privacy Policy, section 9, for the full picture.
         </p>
         <p>
           The relay also <strong className="text-fg">persists a small SQLite
@@ -589,67 +403,6 @@ export default function DocsPage() {
         </DocsSubsection>
       </DocsSection>
 
-      <DocsSection id="agent-network" title="Agent network: deeper look">
-        <p>
-          Each session is one Unix-domain-socket broker plus N peers. The
-          broker multiplexes messages by <InlineCode>to</InlineCode> name and
-          broadcasts system events (<InlineCode>peer_joined</InlineCode>,{" "}
-          <InlineCode>peer_left</InlineCode>).
-        </p>
-        <p>Inside the LLM, the agent skill registers three tools:</p>
-        <CodeBlock
-          label="Tools available to the LLM"
-          language="jsonc"
-          code={`// Discover peers (synchronous, ms-latency)
-list_peers()
-→ { peers: ["backend", "MacMini:agent-1", "trab:worker"] }
-
-// Send a message with ACK (5s ack timeout)
-agent_send({
-  to: "backend",
-  body: { task: "add /healthz endpoint" },
-  re: "<id>"            // optional — set when REPLYING to an earlier message
-})
-→ { status: "received" | "busy" | "denied" | "timeout" | "sent" }
-
-// Cross-PC sends use the same tool — just prefix with the pc_label
-agent_send({ to: "MacMini:agent-1", body: { ... } })
-
-// agent_request is DEPRECATED — emits a warning on first call.
-// Kept for backward compat; new agents use agent_send and observe
-// the inbox in a future turn.`}
-        />
-        <p>
-          Replies arrive in a future turn as a normal envelope with{" "}
-          <InlineCode>re=&lt;your-send-id&gt;</InlineCode>. The agent skill
-          documents the retry matrix (
-          <InlineCode>busy</InlineCode> → back off 2s/5s;{" "}
-          <InlineCode>denied</InlineCode> → abandon;{" "}
-          <InlineCode>timeout</InlineCode> → retry once;{" "}
-          <InlineCode>sent</InlineCode> → cross-PC envelope was forwarded but
-          the remote ACK hasn&apos;t arrived yet).
-        </p>
-        <p>
-          The wire format is a 5-field envelope{" "}
-          <InlineCode>{`{ from, to, id, re, body }`}</InlineCode> serialized as
-          one JSON line per message. The leader&apos;s broker writes an{" "}
-          <InlineCode>audit.jsonl</InlineCode> log at{" "}
-          <InlineCode>~/.pi/remote/sessions/local/audit.jsonl</InlineCode>{" "}
-          for postmortem inspection. See the{" "}
-          <a href="#commands-local" className="text-accent underline">
-            Command reference
-          </a>{" "}
-          for inspecting the mesh from the CLI side
-          (<InlineCode>/remote-pi peers</InlineCode>).
-        </p>
-        <p>
-          Name collisions inside a session get a numeric suffix automatically
-          (<InlineCode>backend</InlineCode>, <InlineCode>backend#2</InlineCode>,{" "}
-          <InlineCode>backend#3</InlineCode>). The broker assigns it and
-          returns the real name to the peer.
-        </p>
-      </DocsSection>
-
       <DocsSection id="protocol" title="Protocol & Security">
         <p>
           The canonical spec for everything wire-level — envelope format,
@@ -669,180 +422,21 @@ agent_send({ to: "MacMini:agent-1", body: { ... } })
           need exact behavior or when writing a new harness adapter.
         </p>
         <p>
-          A short summary of the security posture is on this page (
-          <a href="#mobile-app-layer" className="text-accent underline">
-            trust model
+          <strong className="text-fg">Security posture, in short.</strong>{" "}
+          Connections to the relay are{" "}
+          <strong className="text-fg">encrypted in transit (TLS)</strong>, and
+          devices authenticate each other with{" "}
+          <strong className="text-fg">Ed25519 pairing</strong>, so paired peers
+          verify identity cryptographically. Message payloads are{" "}
+          <strong className="text-fg">not</strong> encrypted at the application
+          layer — the relay operator could in principle read plaintext in memory
+          while forwarding. If you need confidentiality from the relay operator,{" "}
+          <a href="#self-host" className="text-accent underline">
+            self-host the relay
           </a>{" "}
-          and{" "}
-          <a href="#relay" className="text-accent underline">
-            The relay
-          </a>
-          ); the Privacy Policy, section 9, restates it in plain language.
-          PROTOCOL.md is the deep dive that matches the code.
+          behind a VPN. The Privacy Policy, section 9, restates this in plain
+          language, and PROTOCOL.md is the deep dive that matches the code.
         </p>
-      </DocsSection>
-
-      <DocsSection id="daemon-mode" title="Daemon mode">
-        <p>
-          When you want a Pi to keep running in the background — responding to
-          mobile prompts at 3am, processing cron jobs, monitoring a folder
-          while you&apos;re not at the keyboard — promote it to a{" "}
-          <strong className="text-fg">daemon</strong> managed by a single
-          OS-level supervisor. systemd on Linux, launchd on macOS; one
-          supervisor process per machine, N background Pis underneath.
-        </p>
-
-        <DocsSubsection id="daemon-prereq" title="One-time setup">
-          <p>
-            Daemon mode is an explicit opt-in, separate from the setup wizard.
-            Run once per machine, from inside Pi:
-          </p>
-          <CodeBlock
-            code="/remote-pi install"
-            label="In Pi"
-            language="text"
-          />
-          <p>That single command does two things:</p>
-          <ul className="ml-6 list-disc space-y-2">
-            <li>
-              Installs the user-level supervisor service —{" "}
-              <InlineCode>~/.config/systemd/user/remote-pi-supervisord.service</InlineCode>{" "}
-              (Linux) or{" "}
-              <InlineCode>~/Library/LaunchAgents/dev.remotepi.supervisord.plist</InlineCode>{" "}
-              (macOS) — and activates it via{" "}
-              <InlineCode>systemctl --user enable --now</InlineCode> /{" "}
-              <InlineCode>launchctl bootstrap</InlineCode>. It auto-starts at
-              login and survives reboots.
-            </li>
-            <li>
-              Symlinks <InlineCode>remote-pi</InlineCode> and{" "}
-              <InlineCode>pi-supervisord</InlineCode> into{" "}
-              <InlineCode>~/.local/bin/</InlineCode> so the CLI is available
-              from any shell. If <InlineCode>~/.local/bin</InlineCode> is not
-              on your <InlineCode>$PATH</InlineCode>,{" "}
-              <InlineCode>install</InlineCode> prints the exact snippet to
-              add to <InlineCode>~/.zshrc</InlineCode> or{" "}
-              <InlineCode>~/.bashrc</InlineCode>.
-            </li>
-          </ul>
-        </DocsSubsection>
-
-        <DocsSubsection id="daemon-per-folder" title="Per-folder workflow">
-          <p>For each agent you want to keep alive 24/7:</p>
-          <CodeBlock
-            code={`# 1. Configure the agent interactively first (one time).
-cd ~/Movies
-pi                                 # /remote-pi → setup wizard, /remote-pi pair, etc
-
-# 2. Register it as a daemon. Needs '/remote-pi install' first (see
-#    One-time setup above). The id is sha256(realpath)[:8], stable
-#    across machines. With the supervisor running, it starts right
-#    away — no separate start step.
-remote-pi create ~/Movies --name "Video Editor"
-# → Daemon registered: id=4e39152d name="Video Editor" cwd=/Users/x/Movies · started`}
-            label="Per-folder flow"
-            language="bash"
-          />
-          <p>
-            The agent receives prompts as if a user typed them; its response
-            flows back through the relay/mesh you configured during interactive
-            setup — the mobile app sees it live, other agents on the same
-            machine see it via the local UDS mesh.
-          </p>
-        </DocsSubsection>
-
-        <DocsSubsection id="daemon-fleet" title="Fleet operations">
-          <p>Once daemons are registered:</p>
-          <CodeBlock
-            code={`remote-pi daemons                  # list daemons + state
-remote-pi daemon status            # uptime, pid, restart count
-remote-pi daemon send 4e39152d "Cut the first 30 seconds of latest clip"
-remote-pi daemon stop              # stop all
-remote-pi daemon restart           # restart all`}
-            label="Fleet commands"
-            language="bash"
-          />
-          <p>
-            All commands also work as Pi slash commands (interactive){" "}
-            <strong className="text-fg">and</strong> as shell-level{" "}
-            <InlineCode>remote-pi &lt;subcommand&gt;</InlineCode> when installed
-            globally.
-          </p>
-        </DocsSubsection>
-
-        <DocsSubsection id="daemon-remove" title="Removing or uninstalling">
-          <CodeBlock
-            code={`remote-pi remove <id>              # unregister one daemon (config preserved)
-remote-pi uninstall                # remove the supervisor service (registry kept)`}
-            label="Cleanup"
-            language="bash"
-          />
-          <p>
-            <InlineCode>uninstall</InlineCode> is reversible — re-running{" "}
-            <InlineCode>install</InlineCode> later brings every registered
-            daemon back. To wipe the registry entirely:
-          </p>
-          <CodeBlock
-            code="rm ~/.pi/remote/daemons.json"
-            label="Nuke the registry"
-            language="bash"
-          />
-        </DocsSubsection>
-
-        <DocsSubsection id="daemon-logs" title="Where to find logs">
-          <DocsTable
-            headers={["Platform", "Command"]}
-            rows={[
-              [
-                "Linux",
-                <InlineCode key="l">
-                  journalctl --user -u remote-pi-supervisord -f
-                </InlineCode>,
-              ],
-              [
-                "macOS",
-                <InlineCode key="m">
-                  tail -f ~/.pi/remote/supervisord.log
-                </InlineCode>,
-              ],
-            ]}
-          />
-          <p>
-            Each spawned daemon&apos;s stderr is forwarded into the
-            supervisor&apos;s log with a <InlineCode>[&lt;cwd&gt;]</InlineCode>{" "}
-            prefix, so a single stream shows every agent.
-          </p>
-        </DocsSubsection>
-
-        <DocsSubsection id="daemon-caveats" title="Caveats">
-          <ul className="ml-6 list-disc space-y-2">
-            <li>
-              <strong className="text-fg">Tool approval is not gated.</strong>{" "}
-              Daemons inherit the same Pi config the interactive run uses —
-              Bash, Edit, Write, etc. all execute without prompting. Configure
-              Pi&apos;s tool permissions to taste{" "}
-              <em>before</em> promoting a folder to daemon. A tool-approval
-              gate ships in a follow-up plan.
-            </li>
-            <li>
-              <strong className="text-fg">Pairing is still interactive.</strong>{" "}
-              Daemons don&apos;t show a QR themselves; the keypair and paired
-              devices come from the prior interactive <InlineCode>pi</InlineCode>{" "}
-              session in the same folder.
-            </li>
-            <li>
-              <strong className="text-fg">Single supervisor.</strong> If{" "}
-              <InlineCode>pi-supervisord</InlineCode> crashes, every daemon
-              goes down with it. systemd/launchd restarts it within seconds and
-              the children come back automatically.
-            </li>
-            <li>
-              <strong className="text-fg">One daemon per cwd.</strong> The
-              by-path id derivation rejects a second daemon in the same folder
-              at <InlineCode>create</InlineCode> time.
-            </li>
-          </ul>
-        </DocsSubsection>
       </DocsSection>
 
       <DocsSection id="commands" title="Command reference">
@@ -905,14 +499,15 @@ remote-pi uninstall                # remove the supervisor service (registry kep
           title="Daemon fleet — one supervisor, N background Pis"
         >
           <p className="text-sm">
-            See <a href="#daemon-mode" className="text-accent underline">Daemon mode</a> for the full flow.
+            See <a href="#daemon-mode" className="text-accent underline">Daemon mode</a> for the overview and the{" "}
+            <Link href="/tutorials/daemon" className="text-accent underline">Daemon mode tutorial</Link> for the full how-to.
           </p>
           <DocsTable
             headers={["Command", "Description"]}
             rows={[
               [
                 <InlineCode key="c">/remote-pi create &lt;cwd&gt; [--name X]</InlineCode>,
-                "Register a folder as a daemon",
+                "Register a folder as a daemon (starts it when the supervisor is running)",
               ],
               [
                 <InlineCode key="c">/remote-pi remove &lt;id&gt;</InlineCode>,
@@ -1104,7 +699,9 @@ remote-pi uninstall                # remove the supervisor service (registry kep
               Look in your inbox for a <InlineCode>transport_error</InlineCode>{" "}
               envelope with <InlineCode>re=&lt;your-send-id&gt;</InlineCode>{" "}
               — the relay returns one when a forwarded message can&apos;t be
-              delivered.
+              delivered. A <InlineCode>Delivered</InlineCode> ACK only means the
+              remote broker accepted the envelope, not that the peer is alive —
+              validate by roundtrip.
             </li>
           </ul>
           <p className="text-sm">
@@ -1129,10 +726,13 @@ remote-pi uninstall                # remove the supervisor service (registry kep
           </p>
           <p>
             <strong className="text-fg">To run two agents side by side:</strong>{" "}
-            put them in two different directories and answer the setup wizard
-            with the same <em>Default session</em> in each. Both processes
-            then meet in the same agent-network room while keeping isolated
-            workspaces.
+            put them in two different directories — each gets its own workspace
+            and both meet in the same <InlineCode>local</InlineCode> session.
+            See the{" "}
+            <Link href="/tutorials/mesh-local" className="text-accent underline">
+              Local mesh tutorial
+            </Link>
+            .
           </p>
           <p>
             If you actually wanted a second terminal at the same workspace
@@ -1148,6 +748,12 @@ remote-pi uninstall                # remove the supervisor service (registry kep
             Homepage:{" "}
             <Link href="/" className="text-accent underline">
               remote-pi.jacobmoura.work
+            </Link>
+          </li>
+          <li>
+            Tutorials:{" "}
+            <Link href="/tutorials" className="text-accent underline">
+              hands-on guides
             </Link>
           </li>
           <li>
@@ -1199,32 +805,20 @@ function DocsToc() {
         On this page
       </p>
       <ul className="flex flex-col gap-0.5">
-        <TocItem href="#quick-start" label="Quick start">
-          <TocItem href="#agent-network-30s" label="Agent network in 30s" sub />
-        </TocItem>
-        <TocItem href="#what-it-does" label="What it does">
-          <TocItem href="#agent-network-layer" label="Agent network layer" sub />
-          <TocItem href="#mobile-app-layer" label="Mobile app layer" sub />
-        </TocItem>
+        <TocItem href="#quick-start" label="Quick start" />
+        <TocItem href="#what-it-does" label="What it does" />
         <TocItem href="#install" label="Install" />
         <TocItem href="#using-remote-pi" label={<>Using <InlineCode>/remote-pi</InlineCode></>} />
         <TocItem href="#pairing" label="Pairing a mobile device" />
         <TocItem href="#quick-actions" label="Quick actions from the phone" />
+        <TocItem href="#agent-network" label="Agent network" />
+        <TocItem href="#daemon-mode" label="Daemon mode" />
         <TocItem href="#relay" label="The relay">
           <TocItem href="#community-relay" label="Community relay" sub />
           <TocItem href="#self-host" label="Self-host" sub />
           <TocItem href="#point-pi" label="Point Pi at your relay" sub />
         </TocItem>
-        <TocItem href="#agent-network" label="Agent network deep dive" />
         <TocItem href="#protocol" label="Protocol & Security" />
-        <TocItem href="#daemon-mode" label="Daemon mode">
-          <TocItem href="#daemon-prereq" label="One-time setup" sub />
-          <TocItem href="#daemon-per-folder" label="Per-folder workflow" sub />
-          <TocItem href="#daemon-fleet" label="Fleet operations" sub />
-          <TocItem href="#daemon-remove" label="Remove / uninstall" sub />
-          <TocItem href="#daemon-logs" label="Logs" sub />
-          <TocItem href="#daemon-caveats" label="Caveats" sub />
-        </TocItem>
         <TocItem href="#commands" label="Command reference">
           <TocItem href="#commands-local" label="Local session" sub />
           <TocItem href="#commands-daemon" label="Daemon fleet" sub />
