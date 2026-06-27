@@ -23,6 +23,7 @@ class AppSettings {
     this.lspFormatters = const <String, String>{},
     this.formatOnSave = false,
     this.notificationsEnabled = true,
+    this.searchPanelHeight = 260,
   });
 
   final AppThemeMode themeMode;
@@ -69,6 +70,10 @@ class AppSettings {
   /// fora de foco. Editado na aba "Notifications" das Configurações.
   final bool notificationsEnabled;
 
+  /// Altura (px) da área de resultados do painel de busca por conteúdo
+  /// (find-in-files), ajustável arrastando a borda superior do painel.
+  final double searchPanelHeight;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     String? interfaceFont,
@@ -86,6 +91,7 @@ class AppSettings {
     Map<String, String>? lspFormatters,
     bool? formatOnSave,
     bool? notificationsEnabled,
+    double? searchPanelHeight,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -105,6 +111,7 @@ class AppSettings {
       lspFormatters: lspFormatters ?? this.lspFormatters,
       formatOnSave: formatOnSave ?? this.formatOnSave,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      searchPanelHeight: searchPanelHeight ?? this.searchPanelHeight,
     );
   }
 
@@ -122,6 +129,7 @@ class AppSettings {
     if (lspFormatters.isNotEmpty) 'lspFormatters': lspFormatters,
     if (formatOnSave) 'formatOnSave': true,
     if (!notificationsEnabled) 'notificationsEnabled': false,
+    'searchPanelHeight': searchPanelHeight,
   };
 
   factory AppSettings.fromJson(Map<dynamic, dynamic> json) {
@@ -152,6 +160,8 @@ class AppSettings {
       lspFormatters: _strMap(json['lspFormatters']),
       formatOnSave: json['formatOnSave'] as bool? ?? false,
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
+      searchPanelHeight:
+          (json['searchPanelHeight'] as num?)?.toDouble() ?? 260,
     );
   }
 }

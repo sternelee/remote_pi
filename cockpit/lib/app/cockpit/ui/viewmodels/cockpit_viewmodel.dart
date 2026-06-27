@@ -4,6 +4,7 @@ import 'dart:io' show Directory, FileSystemEvent;
 import 'dart:math' show max;
 
 import 'package:cockpit/app/cockpit/domain/contracts/app_launcher.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/content_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_system_mutator.dart';
@@ -17,6 +18,7 @@ import 'package:cockpit/app/cockpit/domain/contracts/session_history.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway_factory.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/workspace_layout_store.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/worktree_manager.dart';
+import 'package:cockpit/app/cockpit/domain/entities/content_search.dart';
 import 'package:cockpit/app/cockpit/domain/entities/file_node.dart';
 import 'package:cockpit/app/cockpit/domain/entities/file_view.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_file_status.dart';
@@ -65,6 +67,7 @@ class CockpitViewModel extends ChangeNotifier {
     this._worktreeMgr,
     this._fileMutator,
     this._lsp,
+    this._contentSearcher,
   );
 
   final ProjectRepository _projects;
@@ -82,6 +85,7 @@ class CockpitViewModel extends ChangeNotifier {
   final WorktreeManager _worktreeMgr;
   final FileSystemMutator _fileMutator;
   final LspServerPool _lsp;
+  final ContentSearcher _contentSearcher;
 
   List<LaunchableApp> _availableApps = const [];
 
@@ -377,6 +381,63 @@ class CockpitViewModel extends ChangeNotifier {
   /// Seleciona um arquivo no FileTreePanel (atualiza o highlight).
   void selectFileInTree(String path) {
     _selectedFileInTree = path;
+    notifyListeners();
+  }
+
+  // ---- busca (find-in-files + abrir resultado) ------------------------------
+
+  /// Busca por **conteúdo** na pasta do projeto selecionado (painel Cmd+Shift+F).
+  /// Stream incremental por arquivo; vazio se não há projeto. Ver [ContentSearcher].
+  Stream<FileMatches> searchContent(
+    String term, {
+    bool caseSensitive = false,
+    bool wholeWord = false,
+    bool regex = false,
+  }) {
+    final root = selectedProject?.path;
+    if (root == null) return const Stream<FileMatches>.empty();
+    return _contentSearcher.search(
+      ContentQuery(
+        root: root,
+        term: term,
+        caseSensitive: caseSensitive,
+        wholeWord: wholeWord,
+        regex: regex,
+      ),
+    );
+  }
+
+  /// Caminho absoluto de um [relative] (relativo ao root do projeto), ou `null`
+  /// se não há projeto selecionado.
+  String? _absoluteOf(String relative) {
+    final root = selectedProject?.path;
+    if (root == null) return null;
+    return '$root/$relative';
+  }
+
+  /// Abre um arquivo do projeto **por caminho relativo** (palette Cmd+P). Aba
+  /// normal (não preview).
+  Future<void> openProjectFile(String relative) async {
+    final abs = _absoluteOf(relative);
+    if (abs != null) await openFile(abs, isPreview: false);
+  }
+
+  /// Abre o resultado de busca (caminho relativo) e revela a [line] (base 1),
+  /// rolando e destacando-a no viewer.
+  Future<void> openSearchResult(String relative, int line) async {
+    final abs = _absoluteOf(relative);
+    if (abs == null) return;
+    await openFile(abs);
+    for (final s in _sessions.values) {
+      if (s is FileViewerSession && s.path == abs) s.reveal(line);
+    }
+  }
+
+  /// Garante o painel de arquivos visível (Cmd+Shift+F abre a busca, que vive
+  /// nele). No-op se já visível.
+  void showTree() {
+    if (_treeVisible) return;
+    _treeVisible = true;
     notifyListeners();
   }
 

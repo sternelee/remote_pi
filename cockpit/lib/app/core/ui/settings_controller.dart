@@ -81,6 +81,9 @@ class SettingsController extends ChangeNotifier {
   void setNotificationsEnabled(bool value) =>
       _apply(_settings.copyWith(notificationsEnabled: value));
 
+  void setSearchPanelHeight(double value) =>
+      _apply(_settings.copyWith(searchPanelHeight: value));
+
   void _apply(AppSettings next) {
     _settings = next;
     notifyListeners();

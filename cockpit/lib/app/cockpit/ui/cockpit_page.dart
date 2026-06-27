@@ -39,6 +39,14 @@ class _CockpitPageState extends State<CockpitPage> {
   static const double _railMin = 190;
   static const double _railMax = 420;
 
+  /// Sobe a cada Cmd+Shift+F → o [ContentSearchPanel] foca o campo de busca.
+  final ValueNotifier<int> _searchFocusSignal = ValueNotifier<int>(0);
+
+  /// Altura (arrastável + persistida) da área de resultados da busca.
+  double _searchHeight = 260;
+  static const double _searchMin = 120;
+  static const double _searchMax = 640;
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +64,10 @@ class _CockpitPageState extends State<CockpitPage> {
       ..addListener(_syncNotifications);
     _syncLspCommands();
     _syncNotifications();
+    _searchHeight = _settings!.settings.searchPanelHeight.clamp(
+      _searchMin,
+      _searchMax,
+    );
   }
 
   SettingsController? _settings;
@@ -89,7 +101,29 @@ class _CockpitPageState extends State<CockpitPage> {
     if (requestFocusActiveComposer == _focusActiveComposer) {
       requestFocusActiveComposer = null;
     }
+    _searchFocusSignal.dispose();
     super.dispose();
+  }
+
+  /// Cmd+P / Ctrl+P: abre a palette de busca por **nome** de arquivo (quick
+  /// open), reusando o índice do `FileSearcher` da VM.
+  void _openFileFinder() {
+    final vm = _vm;
+    final project = vm.selectedProject;
+    if (project == null) return;
+    showFileFinderPalette(
+      context,
+      search: (query) => vm.searchFiles(project.path, query),
+      onPick: vm.openProjectFile,
+    );
+  }
+
+  /// Cmd+Shift+F / Ctrl+Shift+F: revela o painel de arquivos e foca a busca por
+  /// **conteúdo** (find-in-files).
+  void _focusContentSearch() {
+    if (_vm.selectedProject == null) return;
+    _vm.showTree();
+    _searchFocusSignal.value++;
   }
 
   /// Foca o input do agente focado (no-op se a aba ativa não for um agente).
@@ -322,6 +356,17 @@ class _CockpitPageState extends State<CockpitPage> {
             _focusActiveComposer,
         const SingleActivator(LogicalKeyboardKey.keyL, control: true):
             _focusActiveComposer,
+        const SingleActivator(LogicalKeyboardKey.keyP, meta: true):
+            _openFileFinder,
+        const SingleActivator(LogicalKeyboardKey.keyP, control: true):
+            _openFileFinder,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true):
+            _focusContentSearch,
+        const SingleActivator(
+          LogicalKeyboardKey.keyF,
+          control: true,
+          shift: true,
+        ): _focusContentSearch,
       };
 
   @override
@@ -456,6 +501,23 @@ class _CockpitPageState extends State<CockpitPage> {
                                 : vm.createFileIn(parentDir, name),
                             onRename: vm.renamePath,
                             onDelete: vm.deletePath,
+                            searchPanel: vm.selectedProject == null
+                                ? null
+                                : ContentSearchPanel(
+                                    search: vm.searchContent,
+                                    onOpenResult: vm.openSearchResult,
+                                    focusSignal: _searchFocusSignal,
+                                    resultsHeight: _searchHeight,
+                                    onResizeDelta: (dy) => setState(() {
+                                      _searchHeight = (_searchHeight - dy).clamp(
+                                        _searchMin,
+                                        _searchMax,
+                                      );
+                                    }),
+                                    onResizeEnd: () => context
+                                        .read<SettingsController>()
+                                        .setSearchPanelHeight(_searchHeight),
+                                  ),
                             footer: const _LspStatusBar(),
                           ),
                           // Alça de arraste sobre a borda esquerda do painel

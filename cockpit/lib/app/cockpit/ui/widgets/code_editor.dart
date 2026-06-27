@@ -29,10 +29,19 @@ class CodeEditor extends StatefulWidget {
     super.key,
     required this.controller,
     required this.focusNode,
+    this.revealLine,
+    this.revealTick = 0,
   });
 
   final CodeEditingController controller;
   final FocusNode focusNode;
+
+  /// Linha (base 1) a revelar (rolar + selecionar) — vem de um resultado de
+  /// busca. `null` = nenhum pedido.
+  final int? revealLine;
+
+  /// Sobe a cada novo pedido de reveal → re-dispara mesmo pra mesma linha.
+  final int revealTick;
 
   @override
   State<CodeEditor> createState() => _CodeEditorState();
@@ -47,6 +56,57 @@ class _CodeEditorState extends State<CodeEditor> {
     super.initState();
     // Recontar linhas (gutter) a cada digitação que muda o nº de '\n'.
     widget.controller.addListener(_onChanged);
+    if (widget.revealLine != null) _scheduleReveal(widget.revealLine!);
+  }
+
+  @override
+  void didUpdateWidget(CodeEditor old) {
+    super.didUpdateWidget(old);
+    if (widget.revealLine != null && widget.revealTick != old.revealTick) {
+      _scheduleReveal(widget.revealLine!);
+    }
+  }
+
+  /// Agenda o reveal pro pós-frame (precisa do `_lineHeight` do build e do
+  /// ScrollController já anexado).
+  void _scheduleReveal(int oneBased) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reveal(oneBased);
+    });
+  }
+
+  /// Rola até a linha [oneBased] (base 1) e a **seleciona** (highlight visual),
+  /// jogando o foco no campo. Posições fora do texto são ignoradas.
+  void _reveal(int oneBased) {
+    final text = widget.controller.text;
+    final lines = text.split('\n');
+    final idx = oneBased - 1;
+    if (idx < 0 || idx >= lines.length) return;
+    var start = 0;
+    for (var i = 0; i < idx; i++) {
+      start += lines[i].length + 1; // +1 do '\n'
+    }
+    final end = start + lines[idx].length;
+    // Extent no INÍCIO da linha (base no fim): a seleção cobre a linha inteira
+    // igual, mas o `bringIntoView` do campo segue o extent → rola a horizontal
+    // pra esquerda (início), em vez de empurrar pro fim da linha.
+    widget.controller.selection = TextSelection(
+      baseOffset: end,
+      extentOffset: start,
+    );
+    widget.focusNode.requestFocus();
+    if (_horizontal.hasClients) _horizontal.jumpTo(0);
+    if (_vertical.hasClients) {
+      final target = (_padTop + idx * _lineHeight - 80).clamp(
+        0.0,
+        _vertical.position.maxScrollExtent,
+      );
+      _vertical.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   int _lineCount = 1;

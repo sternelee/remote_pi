@@ -95,6 +95,7 @@ class FileSearcherImpl implements FileSearcher {
           if (name.startsWith('.') || _ignored.contains(name)) continue;
           stack.add(entity);
         } else if (entity is File) {
+          if (name == '.DS_Store') continue; // lixo do Finder (macOS)
           if (out.length >= _maxFiles) break;
           final p = entity.path;
           out.add(

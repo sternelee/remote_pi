@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cockpit/app/cockpit/data/filesystem/app_launcher_impl.dart';
+import 'package:cockpit/app/cockpit/data/filesystem/content_searcher_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/file_reader_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/file_searcher_impl.dart';
 import 'package:cockpit/app/cockpit/data/filesystem/file_system_mutator_impl.dart';
@@ -21,6 +22,7 @@ import 'package:cockpit/app/cockpit/data/update/noop_self_updater.dart';
 import 'package:cockpit/app/cockpit/data/update/update_checker_impl.dart';
 import 'package:cockpit/app/cockpit/data/update/url_opener_impl.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/app_launcher.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/content_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/dismissed_update_store.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/environment_installer.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
@@ -105,6 +107,7 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<FileSystemMutator>(const FileSystemMutatorImpl())
         ..addInstance<FileReader>(const FileReaderImpl())
         ..addInstance<FileSearcher>(FileSearcherImpl())
+        ..addInstance<ContentSearcher>(const ContentSearcherImpl())
         ..addInstance<GitStatusReader>(GitStatusReaderImpl())
         ..addInstance<WorktreeManager>(WorktreeManagerImpl())
         ..addInstance<SessionHistory>(const SessionHistoryImpl())

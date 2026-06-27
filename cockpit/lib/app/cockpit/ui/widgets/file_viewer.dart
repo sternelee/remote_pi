@@ -65,6 +65,10 @@ class _FileViewerState extends State<FileViewer> {
   String _baseline = '';
   String? _lastObservedPath;
 
+  /// Último [FileViewerSession.revealTick] visto — detecta novos pedidos de
+  /// "revelar linha" (resultado de busca) vindos da VM.
+  int _lastRevealTick = 0;
+
   CodeEditingController? _ctrl;
   final _focus = FocusNode();
 
@@ -102,6 +106,11 @@ class _FileViewerState extends State<FileViewer> {
   void initState() {
     super.initState();
     _lastObservedPath = widget.session.path;
+    _lastRevealTick = widget.session.revealTick;
+    widget.session.addListener(_onSession);
+    // Reveal pendente num arquivo markdown/svg → abre direto na fonte (o editor
+    // é quem sabe rolar + selecionar a linha; o preview renderizado não).
+    if (widget.session.revealLine != null && _hasPreview) _editing = true;
     final text = _editableText;
     if (text != null) {
       _baseline = text;
@@ -212,8 +221,20 @@ class _FileViewerState extends State<FileViewer> {
     });
   }
 
+  /// Reage a mudanças da sessão: novo pedido de reveal (linha de busca) →
+  /// rebuild pra repassar o tick ao [CodeEditor] (e abrir a fonte se markdown).
+  void _onSession() {
+    if (widget.session.revealTick == _lastRevealTick) return;
+    _lastRevealTick = widget.session.revealTick;
+    if (!mounted) return;
+    setState(() {
+      if (_hasPreview) _editing = true;
+    });
+  }
+
   @override
   void dispose() {
+    widget.session.removeListener(_onSession);
     if (widget.session.saveDraft == _save) widget.session.saveDraft = null;
     _lspDebounce?.cancel();
     _diagSub?.cancel();
@@ -479,7 +500,12 @@ class _FileViewerState extends State<FileViewer> {
   Widget _editor() {
     final ctrl = _ctrl;
     if (ctrl == null) return const SizedBox.shrink();
-    return CodeEditor(controller: ctrl, focusNode: _focus);
+    return CodeEditor(
+      controller: ctrl,
+      focusNode: _focus,
+      revealLine: widget.session.revealLine,
+      revealTick: widget.session.revealTick,
+    );
   }
 }
 
