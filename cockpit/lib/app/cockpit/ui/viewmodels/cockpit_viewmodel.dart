@@ -433,6 +433,28 @@ class CockpitViewModel extends ChangeNotifier {
     }
   }
 
+  /// `true` se [path] está **dentro** do workspace [projectId] (ele mesmo ou
+  /// descendente). Usado pra desligar o LSP em arquivos externos abertos por
+  /// drag&drop do SO (fora do workspace → sem language server).
+  bool isInsideProject(String projectId, String path) {
+    final root = _projectById(projectId)?.path;
+    if (root == null) return false;
+    return _isUnder(path, root);
+  }
+
+  /// Caminho a exibir no breadcrumb do viewer: **relativo** à raiz do workspace
+  /// quando o arquivo está dentro dele; **absoluto** quando é externo (drop do
+  /// SO). Sem barra inicial — a UI fatia por `/`.
+  String displayPath(String projectId, String absolutePath) {
+    final root = _projectById(projectId)?.path;
+    if (root != null && _isUnder(absolutePath, root)) {
+      return absolutePath == root
+          ? absolutePath.split('/').last
+          : absolutePath.substring(root.length + 1);
+    }
+    return absolutePath;
+  }
+
   /// Garante o painel de arquivos visível (Cmd+Shift+F abre a busca, que vive
   /// nele). No-op se já visível.
   void showTree() {

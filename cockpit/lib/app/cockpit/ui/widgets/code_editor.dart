@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
@@ -56,7 +58,53 @@ class _CodeEditorState extends State<CodeEditor> {
     super.initState();
     // Recontar linhas (gutter) a cada digitação que muda o nº de '\n'.
     widget.controller.addListener(_onChanged);
+    widget.controller.addListener(_keepHorizontalOnSelection);
+    _horizontal.addListener(_onHorizontalScroll);
     if (widget.revealLine != null) _scheduleReveal(widget.revealLine!);
+  }
+
+  /// Âncora: offset horizontal do último caret **colapsado**. Enquanto há
+  /// **seleção de intervalo** ([_pinned]), o `EditableText` chama `showOnScreen`
+  /// pro extent e empurra o `_horizontal` pro fim da linha — nós o travamos
+  /// nesta âncora. Caret colapsado (digitar/mover) segue normal.
+  double _lastCollapsedH = 0;
+  bool _pinned = false;
+  bool _restoringH = false;
+
+  void _keepHorizontalOnSelection() {
+    if (!_horizontal.hasClients) return;
+    final sel = widget.controller.selection;
+    if (!sel.isValid) return;
+    if (sel.isCollapsed) {
+      _pinned = false;
+      _lastCollapsedH = _horizontal.offset; // âncora = posição do caret
+    } else {
+      _pinned = true; // o `_onHorizontalScroll` desfaz o auto-scroll do extent
+      _enforcePin();
+    }
+  }
+
+  /// Qualquer rolagem horizontal enquanto pinado (a do `showOnScreen` da
+  /// seleção, independente de quando dispara) é desfeita de volta à âncora.
+  void _onHorizontalScroll() {
+    if (_pinned) _enforcePin();
+  }
+
+  void _enforcePin() {
+    if (_restoringH || !_horizontal.hasClients) return;
+    final clamped = _lastCollapsedH.clamp(
+      0.0,
+      _horizontal.position.maxScrollExtent,
+    );
+    if ((_horizontal.offset - clamped).abs() <= 0.5) return;
+    // Microtask: jumpTo fora do dispatch da notificação de scroll.
+    _restoringH = true;
+    scheduleMicrotask(() {
+      _restoringH = false;
+      if (!_pinned || !_horizontal.hasClients) return;
+      final c = _lastCollapsedH.clamp(0.0, _horizontal.position.maxScrollExtent);
+      if ((_horizontal.offset - c).abs() > 0.5) _horizontal.jumpTo(c);
+    });
   }
 
   @override
@@ -95,6 +143,9 @@ class _CodeEditorState extends State<CodeEditor> {
       extentOffset: start,
     );
     widget.focusNode.requestFocus();
+    // Reveal sempre mostra o início da linha → âncora horizontal em 0 (mantém
+    // coerência com o `_keepHorizontalOnSelection`, que segura essa seleção).
+    _lastCollapsedH = 0;
     if (_horizontal.hasClients) _horizontal.jumpTo(0);
     if (_vertical.hasClients) {
       final target = (_padTop + idx * _lineHeight - 80).clamp(
@@ -158,6 +209,8 @@ class _CodeEditorState extends State<CodeEditor> {
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
+    widget.controller.removeListener(_keepHorizontalOnSelection);
+    _horizontal.removeListener(_onHorizontalScroll);
     _vertical.dispose();
     _horizontal.dispose();
     super.dispose();

@@ -119,6 +119,7 @@ class PaneView extends StatelessWidget {
     return _PaneBody(
       key: ValueKey('body-$tabId'),
       item: session,
+      paneId: pane.id,
       focused: focused && tabId == pane.active,
       active: tabId == pane.active,
       onFillEmpty: (terminal) => onFillEmpty(tabId, terminal),
@@ -273,7 +274,13 @@ class _TabStripState extends State<_TabStrip> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncOverflow();
     });
-    return Container(
+    // Drop do SO na faixa de abas → abre como aba, em qualquer tipo de pane
+    // (em terminal, é aqui em cima que se solta pra abrir aba; o corpo insere
+    // o caminho).
+    return _OpenTabDropTarget(
+      vm: widget.vm,
+      paneId: pane.id,
+      child: Container(
       height: 40,
       decoration: BoxDecoration(
         color: colors.bg,
@@ -349,6 +356,7 @@ class _TabStripState extends State<_TabStrip> {
             onClosePane: () => _confirmClosePane(context),
           ),
         ],
+      ),
       ),
     );
   }
@@ -926,11 +934,15 @@ class _PaneBody extends StatefulWidget {
   const _PaneBody({
     super.key,
     required this.item,
+    required this.paneId,
     required this.focused,
     required this.active,
     required this.onFillEmpty,
   });
   final PaneItem item;
+
+  /// Pane dona desta aba — destino do "abrir como aba" ao soltar arquivo do SO.
+  final String paneId;
   final bool focused;
 
   /// `true` quando esta é a aba **ativa** (visível) da pane — independente do
@@ -948,6 +960,10 @@ class _PaneBody extends StatefulWidget {
 class _PaneBodyState extends State<_PaneBody> {
   final ScrollController _scroll = ScrollController();
   final FocusNode _terminalFocus = FocusNode();
+
+  /// Bounds do composer do agente — pro drop "abrir aba" ignorar drops que caem
+  /// sobre o input (lá o arquivo vira `@menção`, não uma aba nova).
+  final GlobalKey _composerKey = GlobalKey();
 
   static const double _stickThreshold = 80;
 
@@ -1122,36 +1138,119 @@ class _PaneBodyState extends State<_PaneBody> {
           );
         }
         _maybeStickToBottom();
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: AgentTranscript(
-                entries: agent.entries,
-                controller: _scroll,
-                onUiResponse: agent.respondUi,
-                bottomPadding: 150,
+        // Drop do SO no corpo do agente → abre aba; sobre o composer, deixa o
+        // próprio composer tratar (vira `@menção`).
+        return _OpenTabDropTarget(
+          vm: context.read<CockpitViewModel>(),
+          paneId: widget.paneId,
+          excludeKey: _composerKey,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: AgentTranscript(
+                  entries: agent.entries,
+                  controller: _scroll,
+                  onUiResponse: agent.respondUi,
+                  bottomPadding: 150,
+                ),
               ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 16,
-              // Centraliza e limita a largura — em panes largas o input não
-              // estica de ponta a ponta; em panes estreitas, preenche.
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: AgentComposer(
-                    key: ValueKey('composer-${agent.id}'),
-                    session: agent,
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                // Centraliza e limita a largura — em panes largas o input não
+                // estica de ponta a ponta; em panes estreitas, preenche.
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 760),
+                    child: KeyedSubtree(
+                      key: _composerKey,
+                      child: AgentComposer(
+                        key: ValueKey('composer-${agent.id}'),
+                        session: agent,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Aceita **drop nativo do SO** (Finder/Explorer) e abre cada arquivo como uma
+/// **aba** na pane [paneId] (arquivos fora do workspace inclusive — o viewer lê
+/// por caminho absoluto e o LSP fica desligado pra externos). Pastas são
+/// ignoradas. Quando [excludeKey] aponta pra uma área com handler próprio (ex.:
+/// o composer do agente, que vira `@menção`), drops sobre ela são ignorados aqui
+/// pra não duplicar a ação.
+class _OpenTabDropTarget extends StatefulWidget {
+  const _OpenTabDropTarget({
+    required this.vm,
+    required this.paneId,
+    required this.child,
+    this.excludeKey,
+  });
+
+  final CockpitViewModel vm;
+  final String paneId;
+  final Widget child;
+  final GlobalKey? excludeKey;
+
+  @override
+  State<_OpenTabDropTarget> createState() => _OpenTabDropTargetState();
+}
+
+class _OpenTabDropTargetState extends State<_OpenTabDropTarget> {
+  bool _over = false;
+
+  /// `true` se [global] (coords globais lógicas do Flutter) cai dentro da área
+  /// excluída (ex.: o composer) — aí o drop é dela, não nosso.
+  bool _overExcluded(Offset global) {
+    final ctx = widget.excludeKey?.currentContext;
+    final box = ctx?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    return (box.localToGlobal(Offset.zero) & box.size).contains(global);
+  }
+
+  void _setOver(bool value) {
+    if (_over != value) setState(() => _over = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DropTarget(
+      onDragEntered: (d) => _setOver(!_overExcluded(d.globalPosition)),
+      onDragUpdated: (d) => _setOver(!_overExcluded(d.globalPosition)),
+      onDragExited: (_) => _setOver(false),
+      onDragDone: (d) {
+        _setOver(false);
+        if (_overExcluded(d.globalPosition)) return;
+        for (final f in d.files) {
+          if (Directory(f.path).existsSync()) continue; // ignora pastas
+          widget.vm.openFile(f.path, inPane: widget.paneId, isPreview: false);
+        }
+      },
+      child: Stack(
+        children: [
+          widget.child,
+          if (_over)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: context.colors.accentSoft,
+                    border: Border.all(color: context.colors.accent, width: 2),
                   ),
                 ),
               ),
             ),
-          ],
-        );
-      },
+        ],
+      ),
     );
   }
 }
