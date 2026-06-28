@@ -110,6 +110,17 @@ jobs:
           codesign --force --deep --options runtime --timestamp \
             --entitlements macos/Runner/Release.entitlements \
             --sign "$SIGN_ID" "$APP"
+          # O --deep reassinou o cockpit-hook (Contents/Resources) SEM as
+          # entitlements dele. É um exe AOT do Dart: sob hardened runtime sem
+          # allow-jit/allow-unsigned-executable-memory o macOS o mata (SIGKILL).
+          # Reassina o helper com as entitlements certas e re-sela o topo do app
+          # (sem --deep, pra não reassinar/estragar de novo o helper).
+          codesign --force --options runtime --timestamp \
+            --entitlements macos/cockpit_hook.entitlements \
+            --sign "$SIGN_ID" "$APP/Contents/Resources/cockpit-hook"
+          codesign --force --options runtime --timestamp \
+            --entitlements macos/Runner/Release.entitlements \
+            --sign "$SIGN_ID" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           mkdir -p dist
           echo "$APPLE_API_KEY" | base64 -d > "$RUNNER_TEMP/apikey.p8"
