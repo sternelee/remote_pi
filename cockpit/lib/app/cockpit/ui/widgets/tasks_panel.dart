@@ -70,6 +70,7 @@ class _TasksPanelState extends State<TasksPanel> {
                 children: [
                   for (final def in vm.tasks)
                     _TaskRow(
+                      key: ValueKey(def.id),
                       def: def,
                       run: vm.stateOf(def.id),
                       watchSupported: vm.watchSupported(def),
@@ -77,6 +78,7 @@ class _TasksPanelState extends State<TasksPanel> {
                       profileName: vm.selectedProfile(def),
                       canCycleProfile: def.profiles.length >= 2,
                       commandPreview: vm.commandPreview(def),
+                      adHocArgs: vm.adHocArgs(def.id),
                       // Clicar abre a aba read-only de output no pane central.
                       onTap: () => context
                           .read<CockpitViewModel>()
@@ -86,6 +88,7 @@ class _TasksPanelState extends State<TasksPanel> {
                       onRestart: () => vm.restart(def.id),
                       onToggleWatch: () => vm.toggleWatch(def),
                       onCycleProfile: () => vm.cycleProfile(def),
+                      onAdHocChanged: (v) => vm.setAdHocArgs(def.id, v),
                       onKey: (k) => vm.sendKey(def.id, k),
                     ),
                 ],
@@ -127,8 +130,9 @@ class _TasksPanelState extends State<TasksPanel> {
   }
 }
 
-class _TaskRow extends StatelessWidget {
+class _TaskRow extends StatefulWidget {
   const _TaskRow({
+    super.key,
     required this.def,
     required this.run,
     required this.watchSupported,
@@ -136,12 +140,14 @@ class _TaskRow extends StatelessWidget {
     required this.profileName,
     required this.canCycleProfile,
     required this.commandPreview,
+    required this.adHocArgs,
     required this.onTap,
     required this.onStart,
     required this.onStop,
     required this.onRestart,
     required this.onToggleWatch,
     required this.onCycleProfile,
+    required this.onAdHocChanged,
     required this.onKey,
   });
 
@@ -152,101 +158,143 @@ class _TaskRow extends StatelessWidget {
   final String? profileName;
   final bool canCycleProfile;
   final String commandPreview;
+  final String adHocArgs;
   final VoidCallback onTap;
   final VoidCallback onStart;
   final VoidCallback onStop;
   final VoidCallback onRestart;
   final VoidCallback onToggleWatch;
   final VoidCallback onCycleProfile;
+  final void Function(String value) onAdHocChanged;
   final void Function(String key) onKey;
+
+  @override
+  State<_TaskRow> createState() => _TaskRowState();
+}
+
+class _TaskRowState extends State<_TaskRow> {
+  late final TextEditingController _args = TextEditingController(
+    text: widget.adHocArgs,
+  );
+  late bool _showArgs = widget.adHocArgs.isNotEmpty;
+
+  @override
+  void dispose() {
+    _args.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final active = run.isActive;
+    final def = widget.def;
+    final active = widget.run.isActive;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _StatusDot(status: run.status),
-          const SizedBox(width: 8),
-          Expanded(
-            // Só abre a aba de output quando a task está viva (tem buffer);
-            // parada → não clicável.
-            child: HoverTap(
-              onTap: active ? onTap : null,
-              child: Opacity(
-                opacity: active ? 1 : 0.85,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      def.label,
-                      style: context.typo.label.copyWith(color: colors.text),
-                      overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              _StatusDot(status: widget.run.status),
+              const SizedBox(width: 8),
+              Expanded(
+                // Só abre a aba de output quando a task está viva (tem buffer);
+                // parada → não clicável.
+                child: HoverTap(
+                  onTap: active ? widget.onTap : null,
+                  child: Opacity(
+                    opacity: active ? 1 : 0.85,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          def.label,
+                          style: context.typo.label.copyWith(
+                            color: colors.text,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          widget.commandPreview,
+                          style: context.typo.mono.copyWith(
+                            fontSize: 10,
+                            color: colors.text3,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    Text(
-                      commandPreview,
-                      style: context.typo.mono.copyWith(
-                        fontSize: 10,
-                        color: colors.text3,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+              if (active) ...[
+                if (widget.watchSupported)
+                  _IconAction(
+                    tooltip: widget.watchOn
+                        ? 'Reload ao salvar: ligado'
+                        : 'Reload ao salvar: desligado',
+                    icon: widget.watchOn ? Icons.bolt : Icons.bolt_outlined,
+                    color: widget.watchOn ? colors.warn : colors.text3,
+                    onTap: widget.onToggleWatch,
+                  ),
+                for (final k in def.interactiveKeys.where((k) => k.primary))
+                  _IconAction(
+                    tooltip: "${k.label} (envia '${k.key}')",
+                    icon: _iconFor(k.icon),
+                    fallback: k.key,
+                    onTap: () => widget.onKey(k.key),
+                  ),
+                for (final k in def.interactiveKeys.where((k) => !k.primary))
+                  _IconAction(
+                    tooltip: "${k.label} (envia '${k.key}')",
+                    fallback: k.key,
+                    onTap: () => widget.onKey(k.key),
+                  ),
+                _IconAction(
+                  tooltip: 'Reiniciar',
+                  icon: Icons.restart_alt,
+                  onTap: widget.onRestart,
+                ),
+                _IconAction(
+                  tooltip: 'Parar',
+                  icon: Icons.stop,
+                  color: colors.error,
+                  onTap: widget.onStop,
+                ),
+              ] else ...[
+                if (widget.profileName != null)
+                  _ProfileChip(
+                    name: widget.profileName!,
+                    canCycle: widget.canCycleProfile,
+                    onTap: widget.onCycleProfile,
+                  ),
+                _IconAction(
+                  tooltip: 'Args extras (uma execução)',
+                  icon: Icons.tune,
+                  color: _showArgs ? colors.accent : colors.text3,
+                  onTap: () => setState(() => _showArgs = !_showArgs),
+                ),
+                _IconAction(
+                  tooltip: 'Rodar',
+                  icon: Icons.play_arrow,
+                  color: colors.online,
+                  onTap: widget.onStart,
+                ),
+              ],
+            ],
           ),
-          if (active) ...[
-            if (watchSupported)
-              _IconAction(
-                tooltip: watchOn
-                    ? 'Reload ao salvar: ligado'
-                    : 'Reload ao salvar: desligado',
-                icon: watchOn ? Icons.bolt : Icons.bolt_outlined,
-                color: watchOn ? colors.warn : colors.text3,
-                onTap: onToggleWatch,
+          if (!active && _showArgs)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 0, 2),
+              child: TextField(
+                controller: _args,
+                onChanged: widget.onAdHocChanged,
+                placeholder: const Text('+ args (ex.: --dart-define=X=1)'),
+                style: context.typo.mono.copyWith(fontSize: 10),
               ),
-            for (final k in def.interactiveKeys.where((k) => k.primary))
-              _IconAction(
-                tooltip: "${k.label} (envia '${k.key}')",
-                icon: _iconFor(k.icon),
-                fallback: k.key,
-                onTap: () => onKey(k.key),
-              ),
-            for (final k in def.interactiveKeys.where((k) => !k.primary))
-              _IconAction(
-                tooltip: "${k.label} (envia '${k.key}')",
-                fallback: k.key,
-                onTap: () => onKey(k.key),
-              ),
-            _IconAction(
-              tooltip: 'Reiniciar',
-              icon: Icons.restart_alt,
-              onTap: onRestart,
             ),
-            _IconAction(
-              tooltip: 'Parar',
-              icon: Icons.stop,
-              color: colors.error,
-              onTap: onStop,
-            ),
-          ] else ...[
-            if (profileName != null)
-              _ProfileChip(
-                name: profileName!,
-                canCycle: canCycleProfile,
-                onTap: onCycleProfile,
-              ),
-            _IconAction(
-              tooltip: 'Rodar',
-              icon: Icons.play_arrow,
-              color: colors.online,
-              onTap: onStart,
-            ),
-          ],
         ],
       ),
     );

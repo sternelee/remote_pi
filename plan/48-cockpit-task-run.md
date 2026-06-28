@@ -291,10 +291,9 @@ badge pisca `◐→●`; toggle off → manual; vite não mostra o toggle.
 - [x] Passo 4 — subpane de Tasks na coluna direita, controles data-driven
 - [x] Passo 5 — `.cockpit/tasks.json` loader + `cwd` per-task (mesclado no
       discover, JSON tem precedência) + **UI de profiles** (chip que cicla +
-      preview do comando ao vivo; start usa o profile). Falta só "+ args" ad-hoc
-- [ ] Doc do `.cockpit/tasks.json`: documentar o schema (campos, `cwd` per-task,
-      interactiveKeys, watch, progressPatterns, profiles) + publicar/− referenciar
-      um JSON Schema de verdade (substituindo a URL aspiracional removida)
+      preview ao vivo) + **"+ args" ad-hoc** (campo expansível, override de 1 run)
+- [x] Doc do `.cockpit/tasks.json`: `docs/tasks-json.md` (todos os campos) +
+      `docs/tasks.schema.json` (JSON Schema draft-07, referenciável no editor)
 - [x] Passo 6 — watcher reload-on-save (`Directory.watch` recursivo, debounce,
       match por path/ignore) + toggle por task (default on); dispara a tecla de
       `onChange` (ou restart). (progress patterns já vinham do passo 2)
