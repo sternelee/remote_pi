@@ -21,6 +21,7 @@ import 'package:cockpit/app/cockpit/data/tasks/flutter_adapter.dart';
 import 'package:cockpit/app/cockpit/data/tasks/npm_adapter.dart';
 import 'package:cockpit/app/cockpit/data/tasks/pty_task_runner.dart';
 import 'package:cockpit/app/cockpit/data/tasks/task_discovery_impl.dart';
+import 'package:cockpit/app/cockpit/data/terminal/file_terminal_scrollback_store.dart';
 import 'package:cockpit/app/cockpit/data/terminal/pty_terminal_gateway_factory.dart';
 import 'package:cockpit/app/cockpit/data/update/auto_updater_self_updater.dart';
 import 'package:cockpit/app/cockpit/data/update/noop_self_updater.dart';
@@ -44,6 +45,7 @@ import 'package:cockpit/app/cockpit/domain/contracts/session_history.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_discovery.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_runner_gateway.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway_factory.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/terminal_scrollback_store.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_status_server.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/update_checker.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/url_opener.dart';
@@ -122,6 +124,9 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<WorktreeManager>(WorktreeManagerImpl())
         ..addInstance<SessionHistory>(const SessionHistoryImpl())
         ..addInstance<TerminalGatewayFactory>(const PtyTerminalGatewayFactory())
+        ..addInstance<TerminalScrollbackStore>(
+          const FileTerminalScrollbackStore(),
+        )
         ..addLazySingleton<TerminalStatusServer>(TerminalStatusServerImpl.new)
         ..addLazySingleton<TaskRunnerGateway>(PtyTaskRunner.new)
         ..addLazySingleton(TaskTerminalStore.new)

@@ -38,6 +38,7 @@ import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_output_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/terminal_scrollback_store.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:flutter/foundation.dart';
@@ -73,6 +74,7 @@ class CockpitViewModel extends ChangeNotifier {
     this._statusServer,
     this._contentSearcher,
     this._taskTerminals,
+    this._scrollback,
   );
 
   final ProjectRepository _projects;
@@ -93,6 +95,7 @@ class CockpitViewModel extends ChangeNotifier {
   final TerminalStatusServer _statusServer;
   final ContentSearcher _contentSearcher;
   final TaskTerminalStore _taskTerminals;
+  final TerminalScrollbackStore _scrollback;
 
   List<LaunchableApp> _availableApps = const [];
 
@@ -759,6 +762,10 @@ class CockpitViewModel extends ChangeNotifier {
     for (final project in _projectList) {
       _savedLayouts[project.id] = await _layoutStore.load(project.id);
     }
+    // GC do scrollback: apaga arquivos de sessões de terminal que sumiram de
+    // TODOS os layouts. Varre todos os layouts salvos (não só o ativo: a
+    // reconstrução é lazy), senão apagaria o scrollback de projetos não-ativados.
+    unawaited(_scrollback.pruneExcept(_persistedTerminalIds()));
     _selectedProjectId = await _initialSelection();
     // Só o projeto selecionado é ativado (sobe os processos) no boot.
     final selected = _selectedProjectId;
@@ -1458,6 +1465,8 @@ class CockpitViewModel extends ChangeNotifier {
     String projectId,
     String cwd, {
     String? title,
+    String? replay,
+    String? startupCommand,
   }) {
     final t = TerminalSession(
       id: id,
@@ -1465,6 +1474,13 @@ class CockpitViewModel extends ChangeNotifier {
       workingDirectory: cwd,
       gateway: _terminalFactory.create(),
       title: title,
+      // Persistência do scrollback: grava a saída pra replay no próximo boot.
+      scrollbackStore: _scrollback,
+      // Restauração: histórico salvo a reproduzir antes do shell novo (null em
+      // abas criadas do zero).
+      replay: replay,
+      // Restauração: comando a digitar no shell novo (ex.: `claude --resume`).
+      startupCommand: startupCommand,
       // Injeta no env da PTY: roteamento (paneId) + transporte (socket/porta).
       // O `cockpit-hook` do claude herda e reporta status de turno de volta.
       spawnEnv: <String, String>{
@@ -1475,6 +1491,8 @@ class CockpitViewModel extends ChangeNotifier {
     // claude rodando na aba reporta fim de turno via socket → mesma notificação
     // do agente (badge se não for a aba ativa; OS notification se desfocado).
     t.onTurnFinished = () => unawaited(_notifyIfNeeded(t));
+    // cwd vivo (OSC 7) mudou → persiste o layout pra restaurar o shell ali.
+    t.onCwdChanged = () => _scheduleSave(projectId);
     _sessions[t.id] = t;
     return t;
   }
@@ -1561,6 +1579,7 @@ class CockpitViewModel extends ChangeNotifier {
   void _onClaudeStatus(ClaudeStatusUpdate u) {
     final s = _sessions[u.paneId];
     if (s is! TerminalSession) return;
+    final hadSid = s.claudeSessionId;
     s.applyClaudeStatus(
       status: switch (u.status) {
         'working' => TerminalStatus.working,
@@ -1570,6 +1589,12 @@ class CockpitViewModel extends ChangeNotifier {
       sessionId: u.sessionId,
       transcriptPath: u.transcriptPath,
     );
+    // O session-id do claude chega assíncrono pelo hook (não numa mutação de
+    // layout), então persiste o layout quando ele MUDA — senão `claude_sid`
+    // nunca chega ao disco e o restore não consegue dar `claude --resume`.
+    if (s.claudeSessionId != hadSid && s.claudeSessionId != null) {
+      _scheduleSave(s.projectId);
+    }
   }
 
   void _onAgentTurnEnd(AgentSession s) {
@@ -1627,10 +1652,34 @@ class CockpitViewModel extends ChangeNotifier {
     return s;
   }
 
+  /// Ids de todas as sessões do tipo `terminal` presentes em QUALQUER layout
+  /// salvo — o conjunto a preservar no GC do scrollback. Lê os descritores
+  /// `sessions` dos docs já carregados em [_savedLayouts].
+  Set<String> _persistedTerminalIds() {
+    final ids = <String>{};
+    for (final doc in _savedLayouts.values) {
+      if (doc == null) continue;
+      final sessions = doc['sessions'];
+      if (sessions is! Map) continue;
+      sessions.forEach((key, desc) {
+        if (desc is Map && desc['type'] == 'terminal' && key is String) {
+          ids.add(key);
+        }
+      });
+    }
+    return ids;
+  }
+
   void _disposeSession(String id) {
     _fileWatchers.remove(id)?.cancel();
     _fileWatchDebounce.remove(id)?.cancel();
     final s = _sessions.remove(id);
+    // Aba fechada explicitamente → descarta o scrollback persistido (só abas de
+    // terminal têm). O app-quit NÃO passa por aqui (chama `s.dispose()` direto em
+    // `dispose()`), então o registro sobrevive pra restaurar — que é o objetivo.
+    if (s is TerminalSession) {
+      unawaited(_scrollback.delete(projectId: s.projectId, sessionId: id));
+    }
     s?.dispose();
   }
 
@@ -1734,11 +1783,30 @@ class CockpitViewModel extends ChangeNotifier {
 
     switch (desc['type']) {
       case 'terminal':
+        // Carrega o scrollback salvo e o reproduz no terminal restaurado. O
+        // `\x1bc` (RIS) prepended limpa qualquer modo residual (alt-screen) em
+        // que o processo morreu; o `\r\n` final põe o prompt novo numa linha
+        // fresca abaixo do histórico.
+        final raw = await _scrollback.load(
+          projectId: project.id,
+          sessionId: id,
+        );
+        // Se a aba rodava um `claude`, re-executa `claude --resume <sid>` no
+        // shell novo (reanexa a conversa). O replay mostra o histórico até o
+        // claude redesenhar; nas demais abas (shell puro) só há o replay.
+        final claudeSid = desc['claude_sid'] as String?;
+        // cwd vivo salvo (OSC 7, absoluto) vence o `sub` — restaura onde o
+        // usuário parou, mesmo fora do projeto.
+        final termCwd = desc['cwd'] as String? ?? cwdOf();
         _buildTerminal(
           id,
           project.id,
-          cwdOf(),
+          termCwd,
           title: desc['title'] as String?,
+          replay: raw == null ? null : 'c$raw\r\n',
+          startupCommand: claudeSid == null || claudeSid.isEmpty
+              ? null
+              : 'claude --resume $claudeSid',
         );
         return true;
       case 'viewer':
@@ -1936,6 +2004,13 @@ class CockpitViewModel extends ChangeNotifier {
         'type': 'terminal',
         'sub': _subOf(s.workingDirectory, project.path),
         'title': s.title,
+        // cwd vivo do shell (OSC 7), absoluto — o restore sobe o shell aqui (o
+        // usuário pode ter dado `cd` pra fora do projeto). `sub` segue como
+        // fallback pra abas que nunca emitiram OSC 7.
+        if (s.currentDirectory != null) 'cwd': s.currentDirectory,
+        // Se um `claude` rodava nesta aba, guarda o session-id (capturado pelo
+        // hook) pra re-executar `claude --resume <sid>` no restore.
+        if (s.claudeSessionId != null) 'claude_sid': s.claudeSessionId,
       };
     }
     if (s is FileViewerSession) {

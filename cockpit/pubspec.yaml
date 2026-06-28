@@ -98,6 +98,10 @@ dependencies:
   # NOTA: registrar esta dep no plano 37 (responsabilidade do orquestrador).
   pasteboard: ^0.4.0
 
+  # Diretório de applicationSupport pra persistir o scrollback dos terminais
+  # (replay após restart). Já vinha transitivo via Hive; promovido a dep direta.
+  path_provider: ^2.1.0
+
   # Wave 2 — arrastar arquivos do SO (Finder/Explorer/etc.) pro input. O
   # drag-drop interno do Flutter não pega drops nativos; o desktop_drop cobre
   # macOS/Linux/Windows. NOTA: registrar esta dep no plano 37.
