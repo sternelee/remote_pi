@@ -24,6 +24,8 @@ class TasksViewModel extends ChangeNotifier {
   final _states = <String, TaskRun>{};
   // Toggle do "reload ao salvar" por task (default on). Persiste só em memória.
   final _watchOn = <String, bool>{};
+  // Profile escolhido por task (default = primeiro). Persiste só em memória.
+  final _profile = <String, String>{};
 
   List<TaskDefinition> get tasks => _tasks;
   bool get loading => _loading;
@@ -64,8 +66,33 @@ class TasksViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> start(TaskDefinition def, {String? profileName}) =>
-      _runner.start(def, profileName: profileName);
+  /// Nome do profile selecionado (default = primeiro; null se a task não tem).
+  String? selectedProfile(TaskDefinition def) {
+    if (def.profiles.isEmpty) return null;
+    return _profile[def.id] ?? def.profiles.first.name;
+  }
+
+  /// Avança pro próximo profile (cicla). No-op com < 2 profiles.
+  void cycleProfile(TaskDefinition def) {
+    if (def.profiles.length < 2) return;
+    final names = def.profiles.map((p) => p.name).toList();
+    final cur = selectedProfile(def);
+    final next = names[(names.indexOf(cur ?? names.first) + 1) % names.length];
+    _profile[def.id] = next;
+    notifyListeners();
+  }
+
+  /// Comando final (preview) com os args do profile escolhido aplicados.
+  String commandPreview(TaskDefinition def) {
+    final name = selectedProfile(def);
+    final profile = name == null
+        ? null
+        : def.profiles.firstWhere((p) => p.name == name);
+    return '${def.command} ${def.resolveArgs(profile).join(' ')}'.trim();
+  }
+
+  Future<void> start(TaskDefinition def) =>
+      _runner.start(def, profileName: selectedProfile(def));
 
   Future<void> stop(String taskId) => _runner.stop(taskId);
 

@@ -74,6 +74,9 @@ class _TasksPanelState extends State<TasksPanel> {
                       run: vm.stateOf(def.id),
                       watchSupported: vm.watchSupported(def),
                       watchOn: vm.watchOn(def.id),
+                      profileName: vm.selectedProfile(def),
+                      canCycleProfile: def.profiles.length >= 2,
+                      commandPreview: vm.commandPreview(def),
                       // Clicar abre a aba read-only de output no pane central.
                       onTap: () => context
                           .read<CockpitViewModel>()
@@ -82,6 +85,7 @@ class _TasksPanelState extends State<TasksPanel> {
                       onStop: () => vm.stop(def.id),
                       onRestart: () => vm.restart(def.id),
                       onToggleWatch: () => vm.toggleWatch(def),
+                      onCycleProfile: () => vm.cycleProfile(def),
                       onKey: (k) => vm.sendKey(def.id, k),
                     ),
                 ],
@@ -129,11 +133,15 @@ class _TaskRow extends StatelessWidget {
     required this.run,
     required this.watchSupported,
     required this.watchOn,
+    required this.profileName,
+    required this.canCycleProfile,
+    required this.commandPreview,
     required this.onTap,
     required this.onStart,
     required this.onStop,
     required this.onRestart,
     required this.onToggleWatch,
+    required this.onCycleProfile,
     required this.onKey,
   });
 
@@ -141,11 +149,15 @@ class _TaskRow extends StatelessWidget {
   final TaskRun run;
   final bool watchSupported;
   final bool watchOn;
+  final String? profileName;
+  final bool canCycleProfile;
+  final String commandPreview;
   final VoidCallback onTap;
   final VoidCallback onStart;
   final VoidCallback onStop;
   final VoidCallback onRestart;
   final VoidCallback onToggleWatch;
+  final VoidCallback onCycleProfile;
   final void Function(String key) onKey;
 
   @override
@@ -175,7 +187,7 @@ class _TaskRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      '${def.command} ${def.args.join(' ')}',
+                      commandPreview,
                       style: context.typo.mono.copyWith(
                         fontSize: 10,
                         color: colors.text3,
@@ -221,13 +233,20 @@ class _TaskRow extends StatelessWidget {
               color: colors.error,
               onTap: onStop,
             ),
-          ] else
+          ] else ...[
+            if (profileName != null)
+              _ProfileChip(
+                name: profileName!,
+                canCycle: canCycleProfile,
+                onTap: onCycleProfile,
+              ),
             _IconAction(
               tooltip: 'Rodar',
               icon: Icons.play_arrow,
               color: colors.online,
               onTap: onStart,
             ),
+          ],
         ],
       ),
     );
@@ -302,6 +321,54 @@ class _IconAction extends StatelessWidget {
                   ),
                 ),
         ),
+      ),
+    );
+  }
+}
+
+/// Chip que mostra o profile selecionado e cicla pro próximo ao clicar (quando
+/// há 2+). Some o `▾` se não dá pra ciclar (profile único).
+class _ProfileChip extends StatelessWidget {
+  const _ProfileChip({
+    required this.name,
+    required this.canCycle,
+    required this.onTap,
+  });
+
+  final String name;
+  final bool canCycle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: colors.panel3,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            name,
+            style: context.typo.mono.copyWith(fontSize: 10, color: colors.text2),
+          ),
+          if (canCycle)
+            Icon(Icons.arrow_drop_down, size: 14, color: colors.text3),
+        ],
+      ),
+    );
+    if (!canCycle) return Padding(padding: const EdgeInsets.only(right: 2), child: chip);
+    return Tooltip(
+      tooltip: (context) =>
+          const TooltipContainer(child: Text('Trocar profile')),
+      child: HoverTap(
+        borderRadius: BorderRadius.circular(5),
+        onTap: onTap,
+        child: chip,
       ),
     );
   }

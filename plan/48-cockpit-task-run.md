@@ -289,8 +289,9 @@ badge pisca `◐→●`; toggle off → manual; vite não mostra o toggle.
 - [x] Passo 2 — runner reusa PTY (`kyroon_pty`), start/stop/restart/sendKey/resize
 - [x] Passo 3 — discovery + NpmAdapter + FlutterAdapter (+ teste do npm)
 - [x] Passo 4 — subpane de Tasks na coluna direita, controles data-driven
-- [~] Passo 5 — `.cockpit/tasks.json` loader + `cwd` per-task FEITO (mesclado no
-      discover, JSON tem precedência); falta o UI de profiles/args ad-hoc
+- [x] Passo 5 — `.cockpit/tasks.json` loader + `cwd` per-task (mesclado no
+      discover, JSON tem precedência) + **UI de profiles** (chip que cicla +
+      preview do comando ao vivo; start usa o profile). Falta só "+ args" ad-hoc
 - [ ] Doc do `.cockpit/tasks.json`: documentar o schema (campos, `cwd` per-task,
       interactiveKeys, watch, progressPatterns, profiles) + publicar/− referenciar
       um JSON Schema de verdade (substituindo a URL aspiracional removida)
