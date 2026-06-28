@@ -69,4 +69,19 @@ class FileViewerSession extends PaneItem {
     isPreview = false;
     notifyListeners();
   }
+
+  /// Linha (base 1) a revelar no viewer — rolar até ela e destacá-la. `null`
+  /// quando não há pedido pendente. Setado por [reveal] (resultado de busca).
+  int? revealLine;
+
+  /// Sobe a cada [reveal] — permite re-revelar a **mesma** linha (o viewer
+  /// compara o tick pra disparar de novo mesmo sem mudança de [revealLine]).
+  int revealTick = 0;
+
+  /// Pede ao viewer pra revelar [line] (base 1): rola até ela e a destaca.
+  void reveal(int line) {
+    revealLine = line;
+    revealTick++;
+    notifyListeners();
+  }
 }

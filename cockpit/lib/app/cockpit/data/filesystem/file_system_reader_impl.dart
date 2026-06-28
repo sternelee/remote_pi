@@ -25,6 +25,7 @@ class FileSystemReaderImpl implements FileSystemReader {
         final name = entity.path.split(Platform.pathSeparator).last;
         final isDir = entity is Directory;
         if (isDir && _hiddenDirs.contains(name)) continue;
+        if (name == '.DS_Store') continue; // lixo do Finder (macOS)
         final node = FileNode(
           name: name,
           path: entity.path,

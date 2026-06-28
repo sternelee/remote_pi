@@ -24,6 +24,7 @@ class AppSettings {
     this.formatOnSave = false,
     this.notificationsEnabled = true,
     this.soundEnabled = true,
+    this.searchPanelHeight = 260,
   });
 
   final AppThemeMode themeMode;
@@ -74,6 +75,10 @@ class AppSettings {
   /// atenção sem banner do SO). Editado na aba "Notifications".
   final bool soundEnabled;
 
+  /// Altura (px) da área de resultados do painel de busca por conteúdo
+  /// (find-in-files), ajustável arrastando a borda superior do painel.
+  final double searchPanelHeight;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     String? interfaceFont,
@@ -92,6 +97,7 @@ class AppSettings {
     bool? formatOnSave,
     bool? notificationsEnabled,
     bool? soundEnabled,
+    double? searchPanelHeight,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -112,6 +118,7 @@ class AppSettings {
       formatOnSave: formatOnSave ?? this.formatOnSave,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       soundEnabled: soundEnabled ?? this.soundEnabled,
+      searchPanelHeight: searchPanelHeight ?? this.searchPanelHeight,
     );
   }
 
@@ -130,6 +137,7 @@ class AppSettings {
     if (formatOnSave) 'formatOnSave': true,
     if (!notificationsEnabled) 'notificationsEnabled': false,
     if (!soundEnabled) 'soundEnabled': false,
+    'searchPanelHeight': searchPanelHeight,
   };
 
   factory AppSettings.fromJson(Map<dynamic, dynamic> json) {
@@ -161,6 +169,8 @@ class AppSettings {
       formatOnSave: json['formatOnSave'] as bool? ?? false,
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
       soundEnabled: json['soundEnabled'] as bool? ?? true,
+      searchPanelHeight:
+          (json['searchPanelHeight'] as num?)?.toDouble() ?? 260,
     );
   }
 }

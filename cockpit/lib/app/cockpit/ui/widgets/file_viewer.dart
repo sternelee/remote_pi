@@ -11,6 +11,7 @@ import 'package:cockpit/app/core/data/lsp/lsp_command.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
+import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
@@ -65,6 +66,10 @@ class _FileViewerState extends State<FileViewer> {
   String _baseline = '';
   String? _lastObservedPath;
 
+  /// Último [FileViewerSession.revealTick] visto — detecta novos pedidos de
+  /// "revelar linha" (resultado de busca) vindos da VM.
+  int _lastRevealTick = 0;
+
   CodeEditingController? _ctrl;
   final _focus = FocusNode();
 
@@ -75,6 +80,11 @@ class _FileViewerState extends State<FileViewer> {
   StreamSubscription<LspDiagnosticsBatch>? _diagSub;
   Timer? _lspDebounce;
   List<LspDiagnostic> _diagnostics = const <LspDiagnostic>[];
+
+  /// `true` quando o documento foi de fato aberto no LSP. Arquivos **fora do
+  /// workspace** (abertos por drag&drop do SO) ficam sem language server →
+  /// pulamos didOpen/didChange/didClose pra não spawnar servidor no lugar errado.
+  bool _lspOn = false;
 
   /// Texto editável da view atual, ou `null` se o tipo não é editável.
   String? get _editableText => switch (widget.session.view) {
@@ -102,6 +112,11 @@ class _FileViewerState extends State<FileViewer> {
   void initState() {
     super.initState();
     _lastObservedPath = widget.session.path;
+    _lastRevealTick = widget.session.revealTick;
+    widget.session.addListener(_onSession);
+    // Reveal pendente num arquivo markdown/svg → abre direto na fonte (o editor
+    // é quem sabe rolar + selecionar a linha; o preview renderizado não).
+    if (widget.session.revealLine != null && _hasPreview) _editing = true;
     final text = _editableText;
     if (text != null) {
       _baseline = text;
@@ -121,6 +136,12 @@ class _FileViewerState extends State<FileViewer> {
     final vm = context.read<CockpitViewModel>();
     _vm = vm;
     final path = widget.session.path;
+    // Fora do workspace (drop externo) → sem LSP. Mantém o highlight léxico.
+    if (!vm.isInsideProject(widget.session.projectId, path)) {
+      _lspOn = false;
+      return;
+    }
+    _lspOn = true;
     final uri = Uri.file(path).toString();
     unawaited(vm.lspOpenDocument(path, text, widget.session.projectId));
     _diagSub = vm.lspDiagnostics.listen((batch) {
@@ -146,7 +167,7 @@ class _FileViewerState extends State<FileViewer> {
       _ctrl = null;
 
       // Troca o documento do LSP: fecha o antigo, abre o novo.
-      if (oldPath != null) unawaited(_vm?.lspCloseDocument(oldPath));
+      if (oldPath != null && _lspOn) unawaited(_vm?.lspCloseDocument(oldPath));
       _diagSub?.cancel();
       _diagSub = null;
       _diagnostics = const <LspDiagnostic>[];
@@ -182,7 +203,7 @@ class _FileViewerState extends State<FileViewer> {
           _ctrl!.text = text;
           _baseline = text;
           // O disco mudou (agente editou) → mantém o LSP em sync.
-          unawaited(_vm?.lspChangeDocument(widget.session.path, text));
+          if (_lspOn) unawaited(_vm?.lspChangeDocument(widget.session.path, text));
         }
       });
     }
@@ -212,12 +233,26 @@ class _FileViewerState extends State<FileViewer> {
     });
   }
 
+  /// Reage a mudanças da sessão: novo pedido de reveal (linha de busca) →
+  /// rebuild pra repassar o tick ao [CodeEditor] (e abrir a fonte se markdown).
+  void _onSession() {
+    if (widget.session.revealTick == _lastRevealTick) return;
+    _lastRevealTick = widget.session.revealTick;
+    if (!mounted) return;
+    setState(() {
+      if (_hasPreview) _editing = true;
+    });
+  }
+
   @override
   void dispose() {
+    widget.session.removeListener(_onSession);
     if (widget.session.saveDraft == _save) widget.session.saveDraft = null;
     _lspDebounce?.cancel();
     _diagSub?.cancel();
-    if (_vm != null) unawaited(_vm!.lspCloseDocument(widget.session.path));
+    if (_vm != null && _lspOn) {
+      unawaited(_vm!.lspCloseDocument(widget.session.path));
+    }
     _ctrl?.removeListener(_onCtrlChanged);
     _ctrl?.dispose();
     _focus.dispose();
@@ -229,6 +264,7 @@ class _FileViewerState extends State<FileViewer> {
     // Edição do usuário → notifica o LSP (debounced p/ juntar rajada de teclas).
     final ctrl = _ctrl;
     if (ctrl == null) return;
+    if (!_lspOn) return;
     _lspDebounce?.cancel();
     _lspDebounce = Timer(const Duration(milliseconds: 400), () {
       _vm?.lspChangeDocument(widget.session.path, ctrl.text);
@@ -364,7 +400,7 @@ class _FileViewerState extends State<FileViewer> {
       _applyToBuffer(fresh);
       _baseline = fresh;
       _updateDirty(false);
-      unawaited(_vm?.lspChangeDocument(widget.session.path, fresh));
+      if (_lspOn) unawaited(_vm?.lspChangeDocument(widget.session.path, fresh));
     } catch (_) {}
   }
 
@@ -430,21 +466,29 @@ class _FileViewerState extends State<FileViewer> {
       child: Column(
         children: [
           Expanded(child: body),
-          if (editable)
-            _Toolbar(
-              hasPreview: _hasPreview,
-              editing: editingNow,
-              previewing: _hasPreview && !_editing,
-              dirty: _dirty,
-              saving: _saving,
-              onToggle: _toggleEditing,
-              onSave: () => _save().whenComplete(_refocusEditor),
-              onDiscard: () {
-                _discard();
-                _refocusEditor();
-              },
-              onFormat: () => _format().whenComplete(_refocusEditor),
+          // Barra inferior: breadcrumb do caminho à esquerda + ações
+          // (Save/Discard/Format/preview) à direita quando editável.
+          _Toolbar(
+            leading: _Breadcrumb(
+              path: context.read<CockpitViewModel>().displayPath(
+                widget.session.projectId,
+                widget.session.path,
+              ),
+              fileName: widget.session.title,
             ),
+            hasPreview: _hasPreview,
+            editing: editingNow,
+            previewing: _hasPreview && !_editing,
+            dirty: _dirty,
+            saving: _saving,
+            onToggle: _toggleEditing,
+            onSave: () => _save().whenComplete(_refocusEditor),
+            onDiscard: () {
+              _discard();
+              _refocusEditor();
+            },
+            onFormat: () => _format().whenComplete(_refocusEditor),
+          ),
         ],
       ),
     );
@@ -479,7 +523,12 @@ class _FileViewerState extends State<FileViewer> {
   Widget _editor() {
     final ctrl = _ctrl;
     if (ctrl == null) return const SizedBox.shrink();
-    return CodeEditor(controller: ctrl, focusNode: _focus);
+    return CodeEditor(
+      controller: ctrl,
+      focusNode: _focus,
+      revealLine: widget.session.revealLine,
+      revealTick: widget.session.revealTick,
+    );
   }
 }
 
@@ -489,6 +538,7 @@ class _FileViewerState extends State<FileViewer> {
 /// alterações não gravadas.
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
+    required this.leading,
     required this.hasPreview,
     required this.editing,
     required this.previewing,
@@ -499,6 +549,9 @@ class _Toolbar extends StatelessWidget {
     required this.onDiscard,
     required this.onFormat,
   });
+
+  /// Conteúdo à esquerda da barra (o breadcrumb do caminho).
+  final Widget leading;
 
   /// Tem modo renderizado (markdown/svg) → mostra o switch Preview/Source.
   final bool hasPreview;
@@ -527,7 +580,8 @@ class _Toolbar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Spacer(),
+          Expanded(child: leading),
+          const SizedBox(width: 8),
           if (dirty && !saving)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -813,6 +867,58 @@ class _SvgPreview extends StatelessWidget {
           child: SvgPicture.string(source, fit: BoxFit.contain),
         ),
       ),
+    );
+  }
+}
+
+/// Breadcrumb do caminho do arquivo, na barra inferior do viewer (estilo
+/// VSCode). Mostra o caminho **relativo** ao workspace (ou **absoluto** se
+/// externo); o último segmento ganha o ícone do tipo de arquivo. Rola na
+/// horizontal se estourar.
+class _Breadcrumb extends StatelessWidget {
+  const _Breadcrumb({required this.path, required this.fileName});
+
+  /// Caminho já resolvido (relativo ou absoluto), sem barra inicial.
+  final String path;
+  final String fileName;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final typo = context.typo;
+    final segs = path.split('/').where((s) => s.isNotEmpty).toList();
+    if (segs.isEmpty) segs.add(fileName);
+
+    final crumbs = <Widget>[];
+    for (var i = 0; i < segs.length; i++) {
+      final isLast = i == segs.length - 1;
+      if (i > 0) {
+        crumbs.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Icon(Icons.chevron_right, size: 14, color: colors.text4),
+          ),
+        );
+      }
+      if (isLast) {
+        crumbs
+          ..add(FileTypeIcon.file(fileName, size: 13))
+          ..add(const SizedBox(width: 5));
+      }
+      crumbs.add(
+        Text(
+          segs[i],
+          style: typo.label.copyWith(
+            fontSize: 12,
+            color: isLast ? colors.text2 : colors.text4,
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: crumbs),
     );
   }
 }
