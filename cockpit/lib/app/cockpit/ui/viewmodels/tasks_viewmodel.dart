@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cockpit/app/cockpit/domain/contracts/task_discovery.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_runner_gateway.dart';
@@ -17,6 +18,8 @@ class TasksViewModel extends ChangeNotifier {
   final TaskDiscovery _discovery;
   final TaskRunnerGateway _runner;
   StreamSubscription<TaskRun>? _sub;
+  StreamSubscription<FileSystemEvent>? _configWatch;
+  Timer? _reloadDebounce;
 
   String _cwd = '';
   List<TaskDefinition> _tasks = const [];
@@ -56,7 +59,15 @@ class TasksViewModel extends ChangeNotifier {
   Future<void> loadFor(String cwd) async {
     if (cwd == _cwd) return;
     _cwd = cwd;
-    _tasks = const [];
+    _watchConfig(cwd);
+    await _runDiscovery();
+  }
+
+  /// Redescobre as tasks do cwd atual (botão de refresh / watch do tasks.json).
+  Future<void> reload() => _runDiscovery();
+
+  Future<void> _runDiscovery() async {
+    final cwd = _cwd;
     _loading = true;
     notifyListeners();
     final found = cwd.isEmpty
@@ -66,6 +77,25 @@ class TasksViewModel extends ChangeNotifier {
     _tasks = found;
     _loading = false;
     notifyListeners();
+  }
+
+  /// Observa o `.cockpit/tasks.json` do projeto e redescobre (debounced) quando
+  /// ele muda — edições no arquivo refletem na hora, sem trocar de projeto.
+  void _watchConfig(String cwd) {
+    _configWatch?.cancel();
+    _configWatch = null;
+    if (cwd.isEmpty) return;
+    final dir = Directory('$cwd${Platform.pathSeparator}.cockpit');
+    try {
+      if (!dir.existsSync()) return;
+      _configWatch = dir.watch().listen((e) {
+        if (!e.path.endsWith('tasks.json')) return;
+        _reloadDebounce?.cancel();
+        _reloadDebounce = Timer(const Duration(milliseconds: 250), reload);
+      });
+    } catch (_) {
+      // FS sem watch → fica só o refresh manual.
+    }
   }
 
   /// Nome do profile selecionado (default = primeiro; null se a task não tem).
@@ -149,6 +179,8 @@ class TasksViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _sub?.cancel();
+    _configWatch?.cancel();
+    _reloadDebounce?.cancel();
     super.dispose();
   }
 }

@@ -159,6 +159,12 @@ class _TasksPanelState extends State<TasksPanel> {
               width: 12,
               height: 12,
               child: CircularProgressIndicator(size: 12),
+            )
+          else
+            _IconAction(
+              tooltip: 'Recarregar tasks',
+              icon: Icons.refresh,
+              onTap: vm.reload,
             ),
         ],
       ),
@@ -238,29 +244,18 @@ class _TaskRowState extends State<_TaskRow> {
               Expanded(
                 // Só abre a aba de output quando a task está viva (tem buffer);
                 // parada → não clicável.
-                child: HoverTap(
-                  onTap: active ? widget.onTap : null,
-                  child: Opacity(
-                    opacity: active ? 1 : 0.85,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          def.label,
-                          style: context.typo.label.copyWith(
-                            color: colors.text,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          widget.commandPreview,
-                          style: context.typo.mono.copyWith(
-                            fontSize: 10,
-                            color: colors.text3,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                child: Tooltip(
+                  tooltip: (context) =>
+                      TooltipContainer(child: Text(widget.commandPreview)),
+                  child: HoverTap(
+                    onTap: active ? widget.onTap : null,
+                    child: Opacity(
+                      opacity: active ? 1 : 0.85,
+                      child: Text(
+                        def.label,
+                        style: context.typo.label.copyWith(color: colors.text),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
                 ),
