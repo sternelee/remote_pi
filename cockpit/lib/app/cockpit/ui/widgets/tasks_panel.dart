@@ -1,17 +1,11 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:cockpit/app/cockpit/domain/entities/task_definition.dart';
 import 'package:cockpit/app/cockpit/domain/entities/task_run.dart';
+import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/tasks_viewmodel.dart';
-import 'package:cockpit/app/cockpit/ui/widgets/terminal_pane.dart';
-import 'package:cockpit/app/core/ui/themes/terminal_theme.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
-import 'package:xterm/xterm.dart';
 
 /// Subpane de Tasks na coluna direita (abaixo da árvore de arquivos). Lista as
 /// tasks detectadas do projeto com badge de estado e controles de ciclo de vida
@@ -78,8 +72,10 @@ class _TasksPanelState extends State<TasksPanel> {
                     _TaskRow(
                       def: def,
                       run: vm.stateOf(def.id),
-                      selected: vm.focusedTaskId == def.id,
-                      onTap: () => vm.focus(def.id),
+                      // Clicar abre a aba read-only de output no pane central.
+                      onTap: () => context
+                          .read<CockpitViewModel>()
+                          .openTaskOutput(def.id, def.label),
                       onStart: () => vm.start(def),
                       onStop: () => vm.stop(def.id),
                       onRestart: () => vm.restart(def.id),
@@ -88,28 +84,7 @@ class _TasksPanelState extends State<TasksPanel> {
                 ],
               ),
             ),
-          _outputTerminal(context, vm),
         ],
-      ),
-    );
-  }
-
-  /// Terminal embutido da task focada — só aparece se ela está viva (tem PTY).
-  Widget _outputTerminal(BuildContext context, TasksViewModel vm) {
-    final fid = vm.focusedTaskId;
-    if (fid == null) return const SizedBox.shrink();
-    final run = vm.stateOf(fid);
-    if (!run.isActive) return const SizedBox.shrink();
-    return Container(
-      height: 260,
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: context.colors.border)),
-      ),
-      // Key por (taskId, pid): um run novo (restart) remonta o terminal limpo.
-      child: _TaskTerminal(
-        key: ValueKey('$fid:${run.pid}'),
-        vm: vm,
-        taskId: fid,
       ),
     );
   }
@@ -149,7 +124,6 @@ class _TaskRow extends StatelessWidget {
   const _TaskRow({
     required this.def,
     required this.run,
-    required this.selected,
     required this.onTap,
     required this.onStart,
     required this.onStop,
@@ -159,7 +133,6 @@ class _TaskRow extends StatelessWidget {
 
   final TaskDefinition def;
   final TaskRun run;
-  final bool selected;
   final VoidCallback onTap;
   final VoidCallback onStart;
   final VoidCallback onStop;
@@ -171,8 +144,7 @@ class _TaskRow extends StatelessWidget {
     final colors = context.colors;
     final active = run.isActive;
 
-    return Container(
-      color: selected ? colors.accent.withValues(alpha: 0.10) : null,
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       child: Row(
         children: [
@@ -307,67 +279,6 @@ class _IconAction extends StatelessWidget {
                   ),
                 ),
         ),
-      ),
-    );
-  }
-}
-
-/// Terminal embutido que espelha o output ao vivo de uma task num emulador
-/// xterm (mesmo `CockpitTerminal`/`TerminalPane` das abas de shell). Liga o
-/// stream de bytes do runner ao terminal e devolve o teclado via `sendKey`
-/// (digitar 'r' no `flutter run` funciona igual aos botões). A `Key` por
-/// (taskId, pid) garante terminal limpo a cada novo run.
-class _TaskTerminal extends StatefulWidget {
-  const _TaskTerminal({
-    super.key,
-    required this.vm,
-    required this.taskId,
-  });
-
-  final TasksViewModel vm;
-  final String taskId;
-
-  @override
-  State<_TaskTerminal> createState() => _TaskTerminalState();
-}
-
-class _TaskTerminalState extends State<_TaskTerminal> {
-  late final Terminal _terminal;
-  final _focus = FocusNode();
-  StreamSubscription<String>? _sub;
-
-  @override
-  void initState() {
-    super.initState();
-    _terminal = Terminal(maxLines: 5000);
-    _terminal.onOutput = (data) => widget.vm.sendKey(widget.taskId, data);
-    _terminal.onResize = (w, h, pw, ph) =>
-        widget.vm.resize(widget.taskId, h, w);
-    _sub = widget.vm
-        .output(widget.taskId)
-        .cast<List<int>>()
-        .transform(const Utf8Decoder(allowMalformed: true))
-        .listen(_terminal.write);
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 0, 6),
-      child: TerminalPane(
-        terminal: _terminal,
-        focusNode: _focus,
-        hardwareKeyboardOnly: Platform.isWindows,
-        onKeyEvent: (_) => KeyEventResult.ignored,
-        theme: cockpitTerminalThemeFor(Theme.of(context).brightness),
-        textStyle: const TerminalStyle(fontSize: 12),
       ),
     );
   }

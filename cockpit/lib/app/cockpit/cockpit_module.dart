@@ -50,6 +50,7 @@ import 'package:cockpit/app/cockpit/domain/contracts/worktree_manager.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/update_target.dart';
 import 'package:cockpit/app/cockpit/ui/cockpit_page.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
+import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/setup_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/tasks_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/update_viewmodel.dart';
@@ -120,6 +121,7 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<SessionHistory>(const SessionHistoryImpl())
         ..addInstance<TerminalGatewayFactory>(const PtyTerminalGatewayFactory())
         ..addLazySingleton<TaskRunnerGateway>(PtyTaskRunner.new)
+        ..addLazySingleton(TaskTerminalStore.new)
         ..addInstance<TaskDiscovery>(
           TaskDiscoveryImpl(const [NpmAdapter(), FlutterAdapter()]),
         )
