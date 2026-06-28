@@ -34,10 +34,15 @@ class FileTreePanel extends StatefulWidget {
     this.width = 300,
     this.footer,
     this.searchPanel,
+    this.tasksPanel,
   });
 
   /// Rodapé opcional, fixado abaixo da árvore (ex.: barra de status do LSP).
   final Widget? footer;
+
+  /// Subpane de Tasks (executor de build/dev), fixado entre o [searchPanel] e
+  /// o [footer]. Null = sem projeto selecionado.
+  final Widget? tasksPanel;
 
   /// Painel de busca por conteúdo, fixado entre a árvore e o [footer]
   /// (Cmd+Shift+F). `null` quando não há projeto.
@@ -357,6 +362,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
                   ),
           ),
           ?widget.searchPanel,
+          ?widget.tasksPanel,
           ?widget.footer,
         ],
       ),

@@ -15,6 +15,7 @@ export 'pane_divider.dart';
 export 'pane_view.dart';
 export 'projects_rail.dart';
 export 'subfolder_dialog.dart';
+export 'tasks_panel.dart';
 export 'welcome_view.dart';
 export 'workspace_settings_dialog.dart';
 export 'worktree_create_dialog.dart';

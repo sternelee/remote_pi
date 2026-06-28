@@ -87,6 +87,9 @@ class SettingsController extends ChangeNotifier {
   void setSearchPanelHeight(double value) =>
       _apply(_settings.copyWith(searchPanelHeight: value));
 
+  void setTasksPanelHeight(double value) =>
+      _apply(_settings.copyWith(tasksPanelHeight: value));
+
   void _apply(AppSettings next) {
     _settings = next;
     notifyListeners();

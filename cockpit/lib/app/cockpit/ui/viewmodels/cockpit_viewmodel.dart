@@ -36,6 +36,8 @@ import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
+import 'package:cockpit/app/cockpit/ui/session/task_output_session.dart';
+import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:flutter/foundation.dart';
@@ -70,6 +72,7 @@ class CockpitViewModel extends ChangeNotifier {
     this._lsp,
     this._statusServer,
     this._contentSearcher,
+    this._taskTerminals,
   );
 
   final ProjectRepository _projects;
@@ -89,6 +92,7 @@ class CockpitViewModel extends ChangeNotifier {
   final LspServerPool _lsp;
   final TerminalStatusServer _statusServer;
   final ContentSearcher _contentSearcher;
+  final TaskTerminalStore _taskTerminals;
 
   List<LaunchableApp> _availableApps = const [];
 
@@ -268,6 +272,62 @@ class CockpitViewModel extends ChangeNotifier {
   /// - Se já existe um preview aberto na pane, substitui o conteúdo
   /// - Se a aba ativa é um preview, substitui em vez de criar nova aba
   /// - Duplo-clique deve passar `isPreview: false` para criar aba normal
+  /// Abre (ou foca, se já aberta) a aba read-only de output da task [taskId] na
+  /// pane focada. O buffer vive no `TaskTerminalStore` — fechar a aba não perde
+  /// nada e não mexe na task.
+  void openTaskOutput(String taskId, String label) {
+    final projectId = _selectedProjectId;
+    final tree = _activeTree;
+    final paneId = projectId == null ? null : _focused[projectId];
+    if (projectId == null || tree == null || paneId == null) return;
+
+    // Já aberta nesta pane? só foca.
+    for (final entry in _sessions.entries) {
+      final s = entry.value;
+      if (s is TaskOutputSession &&
+          s.taskId == taskId &&
+          s.projectId == projectId) {
+        _trees[projectId] = updateLeaf(
+          tree,
+          paneId,
+          (p) => p.copyWith(active: entry.key),
+        );
+        notifyListeners();
+        return;
+      }
+    }
+
+    final session = TaskOutputSession(
+      id: _nid('t'),
+      projectId: projectId,
+      taskId: taskId,
+      label: label,
+      terminal: _taskTerminals.terminalFor(taskId),
+      workingDirectory: selectedProject?.path ?? '',
+    );
+    _sessions[session.id] = session;
+
+    final lf = findLeaf(tree, paneId);
+    final only = lf?.tabs.length == 1 ? _sessions[lf!.tabs.first] : null;
+    if (lf != null && only is AgentSession && only.status == AgentStatus.empty) {
+      // Pane só com placeholder vazio → substitui.
+      final emptyId = lf.tabs.first;
+      _trees[projectId] = updateLeaf(
+        tree,
+        paneId,
+        (p) => p.copyWith(tabs: [session.id], active: session.id),
+      );
+      _disposeSession(emptyId);
+    } else {
+      _trees[projectId] = updateLeaf(
+        tree,
+        paneId,
+        (p) => p.copyWith(tabs: [...p.tabs, session.id], active: session.id),
+      );
+    }
+    notifyListeners();
+  }
+
   Future<void> openFile(
     String path, {
     String? inPane,
@@ -1696,6 +1756,10 @@ class CockpitViewModel extends ChangeNotifier {
       case 'empty':
         _makeEmptyWithId(id, project.id);
         return true;
+      case 'task_output':
+        // Aba de output de task não sobrevive ao restart (a task morreu) →
+        // não recria; `_sanitizeTree` remove a aba órfã do layout.
+        return false;
       case 'agent':
       default:
         _buildAgent(
@@ -1876,6 +1940,11 @@ class CockpitViewModel extends ChangeNotifier {
     }
     if (s is FileViewerSession) {
       return <String, dynamic>{'type': 'viewer', 'path': s.path};
+    }
+    if (s is TaskOutputSession) {
+      // Marcador efêmero: a task morre no restart do app, então o restore a
+      // descarta (ver `_restoreSession` → false → `_sanitizeTree`).
+      return <String, dynamic>{'type': 'task_output'};
     }
     final a = s as AgentSession;
     if (a.status == AgentStatus.empty) {

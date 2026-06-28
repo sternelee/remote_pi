@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
+import 'package:cockpit/app/cockpit/ui/session/task_output_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
@@ -133,6 +134,7 @@ const double _kTabWidth = 188;
 /// Ícone por tipo de aba (usado na aba e no dropdown "todas as abas").
 IconData _tabIcon(PaneItem? item) {
   if (item is TerminalSession) return Icons.terminal_outlined;
+  if (item is TaskOutputSession) return Icons.play_circle_outline;
   if (item is FileViewerSession) return Icons.description_outlined;
   if (item is AgentSession && item.status == AgentStatus.empty) {
     return Icons.edit_outlined;
@@ -1074,6 +1076,30 @@ class _PaneBodyState extends State<_PaneBody> {
     }
 
     // Terminal: só o TerminalView (ele se atualiza sozinho pelo Terminal model).
+    if (item is TaskOutputSession) {
+      // Aba read-only: renderiza o terminal compartilhado (dono = store), sem
+      // ligar teclado/onOutput. Fechar a aba não toca no buffer nem na task.
+      final settings = context.watch<SettingsController>().settings;
+      final termFont = settings.terminalFont;
+      final termStyle = (termFont == null || termFont.isEmpty)
+          ? TerminalStyle(fontSize: settings.codeSize)
+          : TerminalStyle(fontSize: settings.codeSize, fontFamily: termFont);
+      return ColoredBox(
+        color: context.colors.panel,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 0, 8),
+          child: TerminalPane(
+            terminal: item.terminal,
+            focusNode: _terminalFocus,
+            hardwareKeyboardOnly: Platform.isWindows,
+            onKeyEvent: (_) => KeyEventResult.ignored,
+            theme: cockpitTerminalThemeFor(Theme.of(context).brightness),
+            textStyle: termStyle,
+          ),
+        ),
+      );
+    }
+
     if (item is TerminalSession) {
       final settings = context.watch<SettingsController>().settings;
       final termFont = settings.terminalFont;

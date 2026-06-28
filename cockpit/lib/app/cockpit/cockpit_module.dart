@@ -17,6 +17,10 @@ import 'package:cockpit/app/cockpit/data/repositories/hive_workspace_layout_stor
 import 'package:cockpit/app/cockpit/data/rpc/pi_rpc_process_factory.dart';
 import 'package:cockpit/app/cockpit/data/setup/environment_installer_impl.dart';
 import 'package:cockpit/app/cockpit/data/hooks/terminal_status_server_impl.dart';
+import 'package:cockpit/app/cockpit/data/tasks/flutter_adapter.dart';
+import 'package:cockpit/app/cockpit/data/tasks/npm_adapter.dart';
+import 'package:cockpit/app/cockpit/data/tasks/pty_task_runner.dart';
+import 'package:cockpit/app/cockpit/data/tasks/task_discovery_impl.dart';
 import 'package:cockpit/app/cockpit/data/terminal/pty_terminal_gateway_factory.dart';
 import 'package:cockpit/app/cockpit/data/update/auto_updater_self_updater.dart';
 import 'package:cockpit/app/cockpit/data/update/noop_self_updater.dart';
@@ -37,6 +41,8 @@ import 'package:cockpit/app/cockpit/domain/contracts/project_repository.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/rpc_gateway_factory.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/self_updater.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/session_history.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/task_discovery.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/task_runner_gateway.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_gateway_factory.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_status_server.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/update_checker.dart';
@@ -46,7 +52,9 @@ import 'package:cockpit/app/cockpit/domain/contracts/worktree_manager.dart';
 import 'package:cockpit/app/cockpit/domain/value_objects/update_target.dart';
 import 'package:cockpit/app/cockpit/ui/cockpit_page.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
+import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/setup_viewmodel.dart';
+import 'package:cockpit/app/cockpit/ui/viewmodels/tasks_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/update_viewmodel.dart';
 import 'package:cockpit/app/core/data/repositories/hive_settings_store.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -115,6 +123,11 @@ Future<Module> buildCockpitModule() async {
         ..addInstance<SessionHistory>(const SessionHistoryImpl())
         ..addInstance<TerminalGatewayFactory>(const PtyTerminalGatewayFactory())
         ..addLazySingleton<TerminalStatusServer>(TerminalStatusServerImpl.new)
+        ..addLazySingleton<TaskRunnerGateway>(PtyTaskRunner.new)
+        ..addLazySingleton(TaskTerminalStore.new)
+        ..addInstance<TaskDiscovery>(
+          TaskDiscoveryImpl(const [NpmAdapter(), FlutterAdapter()]),
+        )
         ..addInstance<AppLauncherGateway>(const AppLauncherImpl())
         ..addInstance<Notifier>(notifier)
         ..addInstance<UpdateChecker>(const UpdateCheckerImpl())
@@ -132,6 +145,7 @@ Future<Module> buildCockpitModule() async {
           provide: (s) => s
             ..addChangeNotifier<CockpitViewModel>(CockpitViewModel.new)
             ..addChangeNotifier<SetupViewModel>(SetupViewModel.new)
+            ..addChangeNotifier<TasksViewModel>(TasksViewModel.new)
             ..addChangeNotifier<UpdateViewModel>(UpdateViewModel.new),
           child: (context, state) => const CockpitPage(),
         );
