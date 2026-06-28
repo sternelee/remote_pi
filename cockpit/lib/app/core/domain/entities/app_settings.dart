@@ -24,6 +24,7 @@ class AppSettings {
     this.formatOnSave = false,
     this.notificationsEnabled = true,
     this.searchPanelHeight = 260,
+    this.tasksPanelHeight = 200,
   });
 
   final AppThemeMode themeMode;
@@ -74,6 +75,9 @@ class AppSettings {
   /// (find-in-files), ajustável arrastando a borda superior do painel.
   final double searchPanelHeight;
 
+  /// Altura (px) da área de lista do subpane de Tasks (redimensionável).
+  final double tasksPanelHeight;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     String? interfaceFont,
@@ -92,6 +96,7 @@ class AppSettings {
     bool? formatOnSave,
     bool? notificationsEnabled,
     double? searchPanelHeight,
+    double? tasksPanelHeight,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -112,6 +117,7 @@ class AppSettings {
       formatOnSave: formatOnSave ?? this.formatOnSave,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       searchPanelHeight: searchPanelHeight ?? this.searchPanelHeight,
+      tasksPanelHeight: tasksPanelHeight ?? this.tasksPanelHeight,
     );
   }
 
@@ -130,6 +136,7 @@ class AppSettings {
     if (formatOnSave) 'formatOnSave': true,
     if (!notificationsEnabled) 'notificationsEnabled': false,
     'searchPanelHeight': searchPanelHeight,
+    'tasksPanelHeight': tasksPanelHeight,
   };
 
   factory AppSettings.fromJson(Map<dynamic, dynamic> json) {
@@ -162,6 +169,7 @@ class AppSettings {
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
       searchPanelHeight:
           (json['searchPanelHeight'] as num?)?.toDouble() ?? 260,
+      tasksPanelHeight: (json['tasksPanelHeight'] as num?)?.toDouble() ?? 200,
     );
   }
 }

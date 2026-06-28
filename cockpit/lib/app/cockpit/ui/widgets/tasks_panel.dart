@@ -13,10 +13,21 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 /// **dirigidos por dados** — botões vêm dos [InteractiveKey] da task, sem
 /// nenhum `if (flutter)` aqui.
 class TasksPanel extends StatefulWidget {
-  const TasksPanel({super.key, required this.cwd});
+  const TasksPanel({
+    super.key,
+    required this.cwd,
+    required this.listHeight,
+    required this.onResizeDelta,
+    required this.onResizeEnd,
+  });
 
   /// Pasta do projeto selecionado. Trocar dispara nova descoberta.
   final String cwd;
+
+  /// Altura da área de lista (redimensionável, espelha o painel de SEARCH).
+  final double listHeight;
+  final ValueChanged<double> onResizeDelta;
+  final VoidCallback onResizeEnd;
 
   @override
   State<TasksPanel> createState() => _TasksPanelState();
@@ -53,24 +64,23 @@ class _TasksPanelState extends State<TasksPanel> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _resizeHandle(context),
           _header(context, vm),
-          if (vm.tasks.isEmpty && !vm.loading)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-              child: Text(
-                'Nenhuma task detectada neste projeto.',
-                style: context.typo.label.copyWith(color: colors.text3),
-              ),
-            )
-          else
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.only(bottom: 6),
-                children: [
-                  for (final def in vm.tasks)
-                    _TaskRow(
+          SizedBox(
+            height: widget.listHeight,
+            child: vm.tasks.isEmpty && !vm.loading
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 10, 10),
+                    child: Text(
+                      'Nenhuma task detectada neste projeto.',
+                      style: context.typo.label.copyWith(color: colors.text3),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    children: [
+                      for (final def in vm.tasks)
+                        _TaskRow(
                       key: ValueKey(def.id),
                       def: def,
                       run: vm.stateOf(def.id),
@@ -92,39 +102,65 @@ class _TasksPanelState extends State<TasksPanel> {
                       onAdHocChanged: (v) => vm.setAdHocArgs(def.id, v),
                       onKey: (k) => vm.sendKey(def.id, k),
                     ),
-                ],
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Alça de arraste no topo (igual ao painel de SEARCH): arrastar pra cima
+  /// aumenta a lista; pra baixo diminui. A página clampa e persiste.
+  Widget _resizeHandle(BuildContext context) {
+    final colors = context.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragUpdate: (d) => widget.onResizeDelta(d.delta.dy),
+        onVerticalDragEnd: (_) => widget.onResizeEnd(),
+        child: SizedBox(
+          height: 9,
+          child: Center(
+            child: Container(
+              width: 28,
+              height: 3,
+              decoration: BoxDecoration(
+                color: colors.border,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _header(BuildContext context, TasksViewModel vm) {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 6, 6),
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.only(left: 12, right: 8),
       child: Row(
         children: [
+          Icon(Icons.play_circle_outline, size: 14, color: colors.text3),
+          const SizedBox(width: 8),
           Text(
             'TASKS',
             style: context.typo.label.copyWith(
-              color: colors.text3,
-              fontWeight: FontWeight.w600,
+              fontSize: 11,
               letterSpacing: 0.6,
+              color: colors.text3,
             ),
           ),
-          const SizedBox(width: 6),
-          if (vm.loading)
-            SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.4,
-                color: colors.text3,
-              ),
-            ),
           const Spacer(),
+          if (vm.loading)
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(size: 12),
+            ),
         ],
       ),
     );

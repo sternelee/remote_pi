@@ -47,6 +47,11 @@ class _CockpitPageState extends State<CockpitPage> {
   static const double _searchMin = 120;
   static const double _searchMax = 640;
 
+  /// Altura (arrastável + persistida) da lista de Tasks.
+  double _tasksHeight = 200;
+  static const double _tasksMin = 100;
+  static const double _tasksMax = 520;
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +72,10 @@ class _CockpitPageState extends State<CockpitPage> {
     _searchHeight = _settings!.settings.searchPanelHeight.clamp(
       _searchMin,
       _searchMax,
+    );
+    _tasksHeight = _settings!.settings.tasksPanelHeight.clamp(
+      _tasksMin,
+      _tasksMax,
     );
   }
 
@@ -520,7 +529,19 @@ class _CockpitPageState extends State<CockpitPage> {
                                   ),
                             tasksPanel: vm.selectedProject == null
                                 ? null
-                                : TasksPanel(cwd: vm.selectedProject!.path),
+                                : TasksPanel(
+                                    cwd: vm.selectedProject!.path,
+                                    listHeight: _tasksHeight,
+                                    onResizeDelta: (dy) => setState(() {
+                                      _tasksHeight = (_tasksHeight - dy).clamp(
+                                        _tasksMin,
+                                        _tasksMax,
+                                      );
+                                    }),
+                                    onResizeEnd: () => context
+                                        .read<SettingsController>()
+                                        .setTasksPanelHeight(_tasksHeight),
+                                  ),
                             footer: const _LspStatusBar(),
                           ),
                           // Alça de arraste sobre a borda esquerda do painel
