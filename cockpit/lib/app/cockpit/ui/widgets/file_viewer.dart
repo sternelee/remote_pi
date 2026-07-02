@@ -88,6 +88,12 @@ class _FileViewerState extends State<FileViewer> {
   int _findIndex = -1;
   int _findRevealTick = 0;
 
+  /// `true` enquanto aplicamos matches no controller. `setSearchMatches` dispara
+  /// `notifyListeners` → `_onCtrlChanged` (listener do controller); sem este
+  /// guard, isso reentraria em `_recomputeFind` e recursaria infinitamente (o
+  /// texto não mudou, só o realce).
+  bool _settingMatches = false;
+
   /// LSP: VM (captado uma vez), assinatura de diagnostics e debounce do
   /// didChange. `_diagnostics` espelha o último batch deste documento — vale pro
   /// editor (via `_ctrl`) **e** pro viewer read-only.
@@ -283,6 +289,9 @@ class _FileViewerState extends State<FileViewer> {
   }
 
   void _onCtrlChanged() {
+    // Nosso próprio setSearchMatches (só repinta, não muda texto) → ignora pra
+    // não recursar e pra não churnar o LSP à toa.
+    if (_settingMatches) return;
     _updateDirty(_ctrl != null && _ctrl!.text != _baseline);
     // Buffer mudou com a busca aberta → os offsets deslocaram; recasa.
     if (_findOpen && _findCtrl.text.isNotEmpty) _recomputeFind(reveal: false);
@@ -480,7 +489,7 @@ class _FileViewerState extends State<FileViewer> {
       _findIndex = -1;
       _findInvalid = false;
     });
-    _ctrl?.setSearchMatches(const <MatchSpan>[], -1);
+    _applyMatches(const <MatchSpan>[], -1);
     _refocusEditor();
   }
 
@@ -515,8 +524,15 @@ class _FileViewerState extends State<FileViewer> {
       _findIndex = index;
       _findInvalid = result.invalidRegex;
     });
-    ctrl.setSearchMatches(matches, index);
+    _applyMatches(matches, index);
     if (reveal && index >= 0) _revealFindMatch();
+  }
+
+  /// Aplica os matches no controller sob o guard [_settingMatches] (ver campo).
+  void _applyMatches(List<MatchSpan> matches, int index) {
+    _settingMatches = true;
+    _ctrl?.setSearchMatches(matches, index);
+    _settingMatches = false;
   }
 
   void _findNext() => _stepFind(1);
@@ -527,7 +543,7 @@ class _FileViewerState extends State<FileViewer> {
     final n = _findMatches.length;
     final next = (_findIndex + delta + n) % n;
     setState(() => _findIndex = next);
-    _ctrl?.setSearchMatches(_findMatches, next);
+    _applyMatches(_findMatches, next);
     _revealFindMatch();
   }
 
