@@ -107,22 +107,66 @@ TextSpan? buildCodeSpan(
   required String? language,
   required TextStyle baseStyle,
   List<DiagnosticRange> diagnostics = const <DiagnosticRange>[],
+  List<MatchSpan> matches = const <MatchSpan>[],
+  int currentMatch = -1,
+  Color? matchColor,
+  Color? currentMatchColor,
 }) {
   final palette = context.syntax;
   final leaves = _leavesOf(source, language, palette);
+  final overlays = _Overlays(
+    diagnostics,
+    matches,
+    currentMatch,
+    matchColor,
+    currentMatchColor,
+  );
   if (leaves == null) {
-    // Sem highlight possível. Só vale construir spans se houver diagnostics
-    // para sublinhar; senão, deixa o chamador pintar o texto puro.
-    if (diagnostics.isEmpty) return null;
+    // Sem highlight possível. Só vale construir spans se houver overlays
+    // (diagnostics ou matches de busca) a pintar; senão, deixa o chamador
+    // renderizar o texto puro.
+    if (!overlays.hasAny) return null;
     return TextSpan(
       style: baseStyle,
-      children: _applyDiagnostics(<_Leaf>[_Leaf(source, null)], diagnostics),
+      children: _applyOverlays(<_Leaf>[_Leaf(source, null)], overlays),
     );
   }
   return TextSpan(
     style: baseStyle,
-    children: _applyDiagnostics(leaves, diagnostics),
+    children: _applyOverlays(leaves, overlays),
   );
+}
+
+/// Sobreposições a fundir sobre os spans de syntax: sublinhado de diagnostics
+/// (LSP) e fundo dos matches da busca no arquivo (Cmd+F).
+class _Overlays {
+  const _Overlays(
+    this.diagnostics,
+    this.matches,
+    this.currentMatch,
+    this.matchColor,
+    this.currentMatchColor,
+  );
+
+  final List<DiagnosticRange> diagnostics;
+  final List<MatchSpan> matches;
+  final int currentMatch;
+  final Color? matchColor;
+  final Color? currentMatchColor;
+
+  bool get hasAny => diagnostics.isNotEmpty || matches.isNotEmpty;
+
+  /// Fundo do match que cobre `[a, b)` (o match atual tem cor mais forte), ou
+  /// `null` se nenhum match cobre o trecho.
+  Color? backgroundFor(int a, int b) {
+    for (var i = 0; i < matches.length; i++) {
+      final m = matches[i];
+      if (m.start <= a && m.end >= b) {
+        return i == currentMatch ? currentMatchColor : matchColor;
+      }
+    }
+    return null;
+  }
 }
 
 /// Folha achatada da árvore do highlight.js: um trecho de texto + seu estilo
@@ -173,18 +217,17 @@ void _flatten(
   }
 }
 
-/// Corta as folhas nos limites dos diagnostics e funde o sublinhado ondulado nos
-/// sub-trechos cobertos (preservando a cor de syntax). Sem diagnostics, devolve
-/// os spans 1:1.
-List<InlineSpan> _applyDiagnostics(
-  List<_Leaf> leaves,
-  List<DiagnosticRange> diagnostics,
-) {
-  if (diagnostics.isEmpty) {
+/// Corta as folhas nos limites dos diagnostics **e** dos matches de busca, e
+/// funde em cada sub-trecho o sublinhado ondulado (diagnostics) + o fundo do
+/// match (busca), preservando a cor de syntax. Sem overlays, devolve 1:1.
+List<InlineSpan> _applyOverlays(List<_Leaf> leaves, _Overlays overlays) {
+  if (!overlays.hasAny) {
     return <InlineSpan>[
       for (final leaf in leaves) TextSpan(text: leaf.text, style: leaf.style),
     ];
   }
+  final diagnostics = overlays.diagnostics;
+  final matches = overlays.matches;
   final out = <InlineSpan>[];
   var pos = 0;
   for (final leaf in leaves) {
@@ -193,24 +236,33 @@ List<InlineSpan> _applyDiagnostics(
     pos = end;
     if (leaf.text.isEmpty) continue;
 
-    // Pontos de corte = início/fim da folha + limites de diagnostics internos.
+    // Pontos de corte = início/fim da folha + limites de overlays internos.
     final cuts = <int>{start, end};
     for (final d in diagnostics) {
       if (d.end <= start || d.start >= end) continue;
       if (d.start > start && d.start < end) cuts.add(d.start);
       if (d.end > start && d.end < end) cuts.add(d.end);
     }
+    for (final m in matches) {
+      if (m.end <= start || m.start >= end) continue;
+      if (m.start > start && m.start < end) cuts.add(m.start);
+      if (m.end > start && m.end < end) cuts.add(m.end);
+    }
     final sorted = cuts.toList()..sort();
     for (var i = 0; i + 1 < sorted.length; i++) {
       final a = sorted[i];
       final b = sorted[i + 1];
       final sub = leaf.text.substring(a - start, b - start);
-      final severity = _coveringSeverity(diagnostics, a, b);
       var style = leaf.style;
+      final severity = _coveringSeverity(diagnostics, a, b);
       if (severity != null) {
         style = (style ?? const TextStyle()).merge(
           SyntaxColors.underlineStyleFor(severity),
         );
+      }
+      final bg = overlays.backgroundFor(a, b);
+      if (bg != null) {
+        style = (style ?? const TextStyle()).copyWith(backgroundColor: bg);
       }
       out.add(TextSpan(text: sub, style: style));
     }
