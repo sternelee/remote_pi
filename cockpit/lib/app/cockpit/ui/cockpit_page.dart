@@ -468,21 +468,8 @@ class _CockpitPageState extends State<CockpitPage> {
                 projectName: vm.selectedDisplayTitle ?? 'Cockpit',
                 railVisible: vm.railVisible,
                 treeVisible: vm.treeVisible,
-                openEnabled: vm.selectedProject != null,
                 onToggleRail: vm.toggleRail,
                 onToggleTree: vm.toggleTree,
-                availableApps: vm.availableApps,
-                lastOpenAppId: context.select<SettingsController, String?>(
-                  (c) => c.settings.lastOpenAppId,
-                ),
-                onOpenInApp: (id) {
-                  final app = vm.availableApps
-                      .where((a) => a.id == id)
-                      .firstOrNull;
-                  if (app == null) return;
-                  context.read<SettingsController>().setLastOpenApp(id);
-                  unawaited(vm.openProjectInApp(app));
-                },
               ),
               Expanded(
                 child: Row(
