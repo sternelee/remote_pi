@@ -73,6 +73,15 @@ class _TerminalPaneState extends State<TerminalPane>
   /// pra 1 linha e o scroll ficaria rápido demais).
   double _wheelLineAccum = 0;
 
+  /// Instante do último evento de wheel encaminhado. Se passou tempo suficiente
+  /// desde o último, tratamos como **gesto novo** e zeramos o resíduo acumulado —
+  /// senão a sobra do gesto anterior (às vezes de sinal contrário) faz os
+  /// primeiros eventos do novo scroll serem engolidos ("tinha que rolar mais").
+  DateTime? _lastWheelAt;
+
+  /// Além dessa pausa, o próximo wheel conta como início de um gesto novo.
+  static const _wheelGestureGap = Duration(milliseconds: 150);
+
   /// True enquanto um clique/arraste está sendo **encaminhado pra TUI** (claude/
   /// vim com mouse reporting). Nesse modo o `TerminalPane` é a única autoridade
   /// de mouse: manda botão down no toque, motion durante o arraste e up no
@@ -293,19 +302,44 @@ class _TerminalPaneState extends State<TerminalPane>
     if ((appOwnsScroll || alt) && _controller.selection != null) {
       _controller.clearSelection();
     }
-    // Encaminha o wheel pra app no buffer normal: lá o nosso Scrollable está
-    // NeverScrollable (ver cockpit_terminal.dart), então o wheel chegaria a
-    // ninguém. No alt-buffer quem encaminha é o TerminalScrollGestureHandler do
-    // xterm — não duplicamos.
-    if (appOwnsScroll && !alt) {
+    // App dona o scroll (claude/vim) → **nós** somos a única autoridade do wheel,
+    // nos dois buffers. O nosso Scrollable interno vira NeverScrollable e o
+    // TerminalScrollGestureHandler do xterm (que montaria um 2º Scrollable no
+    // alt-buffer) é desligado nesse modo (ver cockpit_terminal.dart) — então não
+    // há duplicação nem disputa de dois scrollables pelo mesmo pointer signal.
+    // Antes o `!alt` delegava o alt-buffer pro xterm, e a disputa dos dois
+    // scrollables fazia o scroll "morrer" quando claude entrava na UI full-screen.
+    if (appOwnsScroll) {
       final r = _render;
       if (r == null) return;
       final lineHeight = r.lineHeight;
       if (lineHeight <= 0) return;
-      _wheelLineAccum += e.scrollDelta.dy / lineHeight;
-      final steps = _wheelLineAccum.truncate();
-      if (steps == 0) return;
-      _wheelLineAccum -= steps;
+      final lines = e.scrollDelta.dy / lineHeight;
+      if (lines == 0) return;
+      final int steps;
+      if (e.kind == PointerDeviceKind.mouse) {
+        // Wheel de mouse é entrada **discreta**: cada evento é um notch e deve
+        // rolar pelo menos 1 linha no sentido, sem acumular. Acumulando, um giro
+        // lento (delta < 1 linha, e espaçado no tempo) arredondava pra 0 e não
+        // pegava. Notches maiores (com aceleração) rolam proporcional.
+        final mag = lines.abs().round();
+        steps = (mag < 1 ? 1 : mag) * (lines.isNegative ? -1 : 1);
+      } else {
+        // Trackpad / scroll contínuo: deltas pequenos e frequentes — aí sim
+        // acumulamos a fração pra não rolar rápido demais. Reset por gesto (após
+        // pausa) evita arrastar o resíduo do gesto anterior; `round` (não
+        // `truncate`) faz o primeiro delta já valer sem exigir uma linha inteira.
+        final now = DateTime.now();
+        if (_lastWheelAt == null ||
+            now.difference(_lastWheelAt!) > _wheelGestureGap) {
+          _wheelLineAccum = 0;
+        }
+        _lastWheelAt = now;
+        _wheelLineAccum += lines;
+        steps = _wheelLineAccum.round();
+        if (steps == 0) return;
+        _wheelLineAccum -= steps;
+      }
       final cell = r.getCellOffset(r.globalToLocal(e.position));
       final button = steps < 0
           ? TerminalMouseButton.wheelUp

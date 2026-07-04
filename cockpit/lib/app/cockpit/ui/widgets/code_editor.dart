@@ -33,6 +33,8 @@ class CodeEditor extends StatefulWidget {
     required this.focusNode,
     this.revealLine,
     this.revealTick = 0,
+    this.revealMatchStart,
+    this.revealMatchTick = 0,
   });
 
   final CodeEditingController controller;
@@ -44,6 +46,14 @@ class CodeEditor extends StatefulWidget {
 
   /// Sobe a cada novo pedido de reveal → re-dispara mesmo pra mesma linha.
   final int revealTick;
+
+  /// Offset (UTF-16) do início do match atual da busca **no arquivo** (Cmd+F) a
+  /// revelar — rola vertical **e** horizontalmente até ele, sem tocar na seleção
+  /// (o highlight é pintado pelo controller). `null` = nenhum pedido.
+  final int? revealMatchStart;
+
+  /// Sobe a cada navegação de match → re-dispara mesmo pro mesmo offset.
+  final int revealMatchTick;
 
   @override
   State<CodeEditor> createState() => _CodeEditorState();
@@ -113,6 +123,13 @@ class _CodeEditorState extends State<CodeEditor> {
     if (widget.revealLine != null && widget.revealTick != old.revealTick) {
       _scheduleReveal(widget.revealLine!);
     }
+    if (widget.revealMatchStart != null &&
+        widget.revealMatchTick != old.revealMatchTick) {
+      final start = widget.revealMatchStart!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _revealMatch(start);
+      });
+    }
   }
 
   /// Agenda o reveal pro pós-frame (precisa do `_lineHeight` do build e do
@@ -157,6 +174,66 @@ class _CodeEditorState extends State<CodeEditor> {
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
       );
+    }
+  }
+
+  /// Rola até o match da busca no [offset] (início) — vertical **e** horizontal
+  /// — sem mexer na seleção do usuário (o realce do match é pintado pelo
+  /// controller via `setSearchMatches`). Neutraliza o pin horizontal pra poder
+  /// rolar a linha longa até a coluna do match.
+  void _revealMatch(int offset) {
+    final text = widget.controller.text;
+    if (offset < 0 || offset > text.length) return;
+    // Linha (base 0) e início da linha que contém o offset.
+    var line = 0;
+    var lineStart = 0;
+    for (var i = 0; i < offset; i++) {
+      if (text.codeUnitAt(i) == 0x0A) {
+        line++;
+        lineStart = i + 1;
+      }
+    }
+    _pinned = false; // libera o pin: queremos rolar até a coluna do match
+
+    if (_vertical.hasClients) {
+      final target = (_padTop + line * _lineHeight - 80).clamp(
+        0.0,
+        _vertical.position.maxScrollExtent,
+      );
+      _vertical.animateTo(
+        target,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    if (_horizontal.hasClients) {
+      final syntax = context.syntax;
+      final codeStyle = context.typo.mono.copyWith(color: syntax.base);
+      // Largura do prefixo da linha até o match → coluna em px.
+      final prefix = TextPainter(
+        text: TextSpan(text: text.substring(lineStart, offset), style: codeStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final x = prefix.width;
+      final viewport = _horizontal.position.viewportDimension;
+      final cur = _horizontal.offset;
+      final maxH = _horizontal.position.maxScrollExtent;
+      double target = cur;
+      // Fora à esquerda → alinha com folga; fora à direita → traz pra dentro.
+      if (x < cur + 40) {
+        target = (x - 40).clamp(0.0, maxH);
+      } else if (x > cur + viewport - 80) {
+        target = (x - viewport + 120).clamp(0.0, maxH);
+      }
+      _lastCollapsedH = target;
+      if ((target - cur).abs() > 0.5) {
+        _horizontal.animateTo(
+          target,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        );
+      }
     }
   }
 

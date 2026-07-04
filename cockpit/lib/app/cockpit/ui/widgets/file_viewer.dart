@@ -7,11 +7,13 @@ import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_viewmodel.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/agent_markdown.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/code_editor.dart';
+import 'package:cockpit/app/cockpit/ui/widgets/file_find_bar.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_command.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
+import 'package:cockpit/app/core/ui/menu/editor_menu_bridge.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
@@ -72,6 +74,26 @@ class _FileViewerState extends State<FileViewer> {
 
   CodeEditingController? _ctrl;
   final _focus = FocusNode();
+
+  /// Busca **no arquivo** (Cmd+F). Estado local: barra aberta, query, opções e
+  /// matches casados sobre o buffer atual. O highlight é pintado pelo controller
+  /// (`setSearchMatches`); a navegação rola o editor via `_findRevealTick`.
+  bool _findOpen = false;
+  final _findCtrl = TextEditingController();
+  final _findFocus = FocusNode();
+  bool _findCase = false;
+  bool _findWord = false;
+  bool _findRegex = false;
+  bool _findInvalid = false;
+  List<MatchSpan> _findMatches = const <MatchSpan>[];
+  int _findIndex = -1;
+  int _findRevealTick = 0;
+
+  /// `true` enquanto aplicamos matches no controller. `setSearchMatches` dispara
+  /// `notifyListeners` → `_onCtrlChanged` (listener do controller); sem este
+  /// guard, isso reentraria em `_recomputeFind` e recursaria infinitamente (o
+  /// texto não mudou, só o realce).
+  bool _settingMatches = false;
 
   /// LSP: VM (captado uma vez), assinatura de diagnostics e debounce do
   /// didChange. `_diagnostics` espelha o último batch deste documento — vale pro
@@ -166,6 +188,12 @@ class _FileViewerState extends State<FileViewer> {
       _ctrl?.dispose();
       _ctrl = null;
 
+      // Busca é por-arquivo: fecha ao trocar de documento.
+      _findOpen = false;
+      _findMatches = const <MatchSpan>[];
+      _findIndex = -1;
+      _findInvalid = false;
+
       // Troca o documento do LSP: fecha o antigo, abre o novo.
       if (oldPath != null && _lspOn) unawaited(_vm?.lspCloseDocument(oldPath));
       _diagSub?.cancel();
@@ -244,8 +272,47 @@ class _FileViewerState extends State<FileViewer> {
     });
   }
 
+  /// Bridge app-scoped do menu File (Save/Discard/Format). Capturado em
+  /// [didChangeDependencies] pra ficar acessível no [dispose] (onde `context`
+  /// já não pode ser lido).
+  EditorMenuBridge? _menuBridge;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _menuBridge = context.read<EditorMenuBridge>();
+  }
+
+  /// Publica (ou limpa) o estado do menu File conforme esta aba. Só publica se
+  /// for a aba **focada** e em edição; senão libera o menu (item cinza). As
+  /// capacidades espelham exatamente os botões da toolbar (Save/Discard exigem
+  /// `dirty && !saving`; Format exige só `!saving`). `owner: this` garante que a
+  /// aba antiga não apague o estado da nova ao perder o foco.
+  void _syncMenuBridge() {
+    final bridge = _menuBridge;
+    if (bridge == null) return;
+    if (widget.focused && _editingNow) {
+      final canWrite = _dirty && !_saving;
+      bridge.publish(
+        owner: this,
+        canSave: canWrite,
+        canDiscard: canWrite,
+        canFormat: !_saving,
+        onSave: () => _save().whenComplete(_refocusEditor),
+        onDiscard: () {
+          _discard();
+          _refocusEditor();
+        },
+        onFormat: () => _format().whenComplete(_refocusEditor),
+      );
+    } else {
+      bridge.clear(this);
+    }
+  }
+
   @override
   void dispose() {
+    _menuBridge?.clear(this);
     widget.session.removeListener(_onSession);
     if (widget.session.saveDraft == _save) widget.session.saveDraft = null;
     _lspDebounce?.cancel();
@@ -256,11 +323,18 @@ class _FileViewerState extends State<FileViewer> {
     _ctrl?.removeListener(_onCtrlChanged);
     _ctrl?.dispose();
     _focus.dispose();
+    _findCtrl.dispose();
+    _findFocus.dispose();
     super.dispose();
   }
 
   void _onCtrlChanged() {
+    // Nosso próprio setSearchMatches (só repinta, não muda texto) → ignora pra
+    // não recursar e pra não churnar o LSP à toa.
+    if (_settingMatches) return;
     _updateDirty(_ctrl != null && _ctrl!.text != _baseline);
+    // Buffer mudou com a busca aberta → os offsets deslocaram; recasa.
+    if (_findOpen && _findCtrl.text.isNotEmpty) _recomputeFind(reveal: false);
     // Edição do usuário → notifica o LSP (debounced p/ juntar rajada de teclas).
     final ctrl = _ctrl;
     if (ctrl == null) return;
@@ -286,6 +360,48 @@ class _FileViewerState extends State<FileViewer> {
         if (mounted) _focus.requestFocus();
       });
     }
+  }
+
+  /// Duplica as linhas tocadas pela seleção (linha inteira, à la VSCode
+  /// "Copy Line Down/Up"). Sem seleção → duplica a linha do cursor. A cópia
+  /// entra abaixo ([down] = true) ou acima; o cursor/seleção acompanha a cópia.
+  void _cloneLines({required bool down}) {
+    final ctrl = _ctrl;
+    if (ctrl == null) return;
+    final text = ctrl.text;
+    final sel = ctrl.selection;
+    if (!sel.isValid) return;
+
+    // Expande pra abranger linhas inteiras: início da linha do menor offset até
+    // o fim da linha do maior offset.
+    final selStart = sel.start;
+    final selEnd = sel.end;
+    final lineStart = text.lastIndexOf('\n', selStart - 1) + 1;
+    var lineEnd = text.indexOf('\n', selEnd);
+    if (lineEnd == -1) lineEnd = text.length;
+    final block = text.substring(lineStart, lineEnd);
+
+    final String newText;
+    final int delta;
+    if (down) {
+      // Insere \n + bloco logo após a linha final; empurra o cursor pra cópia.
+      newText = '${text.substring(0, lineEnd)}\n$block${text.substring(lineEnd)}';
+      delta = block.length + 1;
+    } else {
+      // Insere bloco + \n antes da linha inicial; cursor fica na cópia de cima
+      // (offsets originais já apontam pra ela).
+      newText =
+          '${text.substring(0, lineStart)}$block\n${text.substring(lineStart)}';
+      delta = 0;
+    }
+
+    ctrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection(
+        baseOffset: sel.baseOffset + delta,
+        extentOffset: sel.extentOffset + delta,
+      ),
+    );
   }
 
   void _discard() {
@@ -417,6 +533,115 @@ class _FileViewerState extends State<FileViewer> {
     );
   }
 
+  // ── Busca no arquivo (Cmd+F) ──────────────────────────────────────────────
+
+  /// Abre a barra de busca. Se há texto selecionado numa única linha, usa-o como
+  /// termo inicial (igual VSCode). Já aberta → só refoca e seleciona tudo.
+  void _openFind() {
+    final ctrl = _ctrl;
+    if (ctrl == null || !_editingNow) return;
+    final sel = ctrl.selection;
+    // Seed do termo a partir da seleção (colapsa depois pra soltar o pin
+    // horizontal do editor, que só reage a seleção de intervalo).
+    if (sel.isValid && !sel.isCollapsed) {
+      final picked = sel.textInside(ctrl.text);
+      if (picked.isNotEmpty && !picked.contains('\n')) {
+        _findCtrl.text = picked;
+      }
+      ctrl.selection = TextSelection.collapsed(offset: sel.baseOffset);
+    }
+    setState(() => _findOpen = true);
+    _recomputeFind(reveal: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _findFocus.requestFocus();
+      _findCtrl.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _findCtrl.text.length,
+      );
+    });
+  }
+
+  /// Fecha a barra, limpa os realces e devolve o foco ao editor.
+  void _closeFind() {
+    if (!_findOpen) return;
+    setState(() {
+      _findOpen = false;
+      _findMatches = const <MatchSpan>[];
+      _findIndex = -1;
+      _findInvalid = false;
+    });
+    _applyMatches(const <MatchSpan>[], -1);
+    _refocusEditor();
+  }
+
+  /// Recasa a query no buffer atual e atualiza realces. Com [reveal], salta pro
+  /// primeiro match a partir do cursor (abertura / mudança de query/opções).
+  void _recomputeFind({required bool reveal}) {
+    final ctrl = _ctrl;
+    if (ctrl == null) return;
+    final result = computeFileMatches(
+      ctrl.text,
+      _findCtrl.text,
+      caseSensitive: _findCase,
+      wholeWord: _findWord,
+      regex: _findRegex,
+    );
+    final matches = result.matches;
+    var index = -1;
+    if (matches.isNotEmpty) {
+      if (reveal) {
+        // Primeiro match no cursor ou depois dele; senão, o primeiro (wrap).
+        final caret = ctrl.selection.baseOffset;
+        final from = caret < 0 ? 0 : caret;
+        index = matches.indexWhere((m) => m.start >= from);
+        if (index < 0) index = 0;
+      } else {
+        // Preserva o match atual se ainda couber; senão clampa.
+        index = _findIndex.clamp(0, matches.length - 1);
+      }
+    }
+    setState(() {
+      _findMatches = matches;
+      _findIndex = index;
+      _findInvalid = result.invalidRegex;
+    });
+    _applyMatches(matches, index);
+    if (reveal && index >= 0) _revealFindMatch();
+  }
+
+  /// Aplica os matches no controller sob o guard [_settingMatches] (ver campo).
+  void _applyMatches(List<MatchSpan> matches, int index) {
+    _settingMatches = true;
+    _ctrl?.setSearchMatches(matches, index);
+    _settingMatches = false;
+  }
+
+  void _findNext() => _stepFind(1);
+  void _findPrev() => _stepFind(-1);
+
+  void _stepFind(int delta) {
+    if (_findMatches.isEmpty) return;
+    final n = _findMatches.length;
+    final next = (_findIndex + delta + n) % n;
+    setState(() => _findIndex = next);
+    _applyMatches(_findMatches, next);
+    _revealFindMatch();
+  }
+
+  /// Pede ao [CodeEditor] pra rolar até o match atual (bump do tick).
+  void _revealFindMatch() {
+    if (!mounted) return;
+    setState(() => _findRevealTick++);
+  }
+
+  void _onFindChanged(String _) => _recomputeFind(reveal: true);
+
+  void _toggleFind(void Function() mutate) {
+    setState(mutate);
+    _recomputeFind(reveal: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -424,6 +649,12 @@ class _FileViewerState extends State<FileViewer> {
     // Texto/código sem preview edita direto; markdown/svg só editam quando o
     // switch está em "Source".
     final editingNow = editable && (!_hasPreview || _editing);
+
+    // Reflete o estado atual no menu File (Save/Discard/Format). Post-frame
+    // porque `publish/clear` pode `notifyListeners` (não pode rodar durante build).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncMenuBridge();
+    });
 
     final Widget body = switch (widget.session.view) {
       FileViewMarkdown(:final text) =>
@@ -503,6 +734,9 @@ class _FileViewerState extends State<FileViewer> {
             _save(),
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () =>
             _save(),
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _openFind,
         const SingleActivator(
           LogicalKeyboardKey.keyF,
           meta: true,
@@ -515,6 +749,20 @@ class _FileViewerState extends State<FileViewer> {
           shift: true,
         ): () =>
             _format(),
+        // Clonar linha(s): Option+Shift+↓/↑ (macOS) = Alt+Shift+↓/↑ (Win/Linux).
+        // `alt` é a mesma tecla lógica (Option) → um binding serve as 3 plataformas.
+        const SingleActivator(
+          LogicalKeyboardKey.arrowDown,
+          alt: true,
+          shift: true,
+        ): () =>
+            _cloneLines(down: true),
+        const SingleActivator(
+          LogicalKeyboardKey.arrowUp,
+          alt: true,
+          shift: true,
+        ): () =>
+            _cloneLines(down: false),
       },
       child: content,
     );
@@ -523,11 +771,43 @@ class _FileViewerState extends State<FileViewer> {
   Widget _editor() {
     final ctrl = _ctrl;
     if (ctrl == null) return const SizedBox.shrink();
-    return CodeEditor(
-      controller: ctrl,
-      focusNode: _focus,
-      revealLine: widget.session.revealLine,
-      revealTick: widget.session.revealTick,
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CodeEditor(
+            controller: ctrl,
+            focusNode: _focus,
+            revealLine: widget.session.revealLine,
+            revealTick: widget.session.revealTick,
+            revealMatchStart: _findIndex >= 0 && _findIndex < _findMatches.length
+                ? _findMatches[_findIndex].start
+                : null,
+            revealMatchTick: _findRevealTick,
+          ),
+        ),
+        if (_findOpen)
+          Positioned(
+            top: 8,
+            right: 16,
+            child: FileFindBar(
+              controller: _findCtrl,
+              focusNode: _findFocus,
+              matchCount: _findMatches.length,
+              currentIndex: _findIndex,
+              caseSensitive: _findCase,
+              wholeWord: _findWord,
+              regex: _findRegex,
+              invalidRegex: _findInvalid,
+              onChanged: _onFindChanged,
+              onNext: _findNext,
+              onPrev: _findPrev,
+              onClose: _closeFind,
+              onToggleCase: () => _toggleFind(() => _findCase = !_findCase),
+              onToggleWord: () => _toggleFind(() => _findWord = !_findWord),
+              onToggleRegex: () => _toggleFind(() => _findRegex = !_findRegex),
+            ),
+          ),
+      ],
     );
   }
 }

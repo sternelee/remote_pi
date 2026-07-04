@@ -1,4 +1,5 @@
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
+import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
 import 'package:flutter/widgets.dart';
 
@@ -19,6 +20,18 @@ class CodeEditingController extends TextEditingController {
   List<LspDiagnostic> get diagnostics => _diagnostics;
   set diagnostics(List<LspDiagnostic> value) {
     _diagnostics = value;
+    notifyListeners();
+  }
+
+  /// Matches da busca no arquivo (Cmd+F) + índice do match atual (-1 = nenhum).
+  /// Pintados como fundo sobre o syntax highlight; o atual em cor mais forte.
+  List<MatchSpan> _matches = const <MatchSpan>[];
+  int _currentMatch = -1;
+
+  /// Substitui os matches destacados e o match atual. Repinta o campo.
+  void setSearchMatches(List<MatchSpan> matches, int current) {
+    _matches = matches;
+    _currentMatch = current;
     notifyListeners();
   }
 
@@ -53,12 +66,17 @@ class CodeEditingController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
+    final colors = context.colors;
     final span = buildCodeSpan(
       context,
       source: text,
       language: language,
       baseStyle: style ?? const TextStyle(),
       diagnostics: diagnosticRangesFor(text, _diagnostics),
+      matches: _matches,
+      currentMatch: _currentMatch,
+      matchColor: colors.warn.withValues(alpha: 0.28),
+      currentMatchColor: colors.accent.withValues(alpha: 0.45),
     );
     return span ?? TextSpan(text: text, style: style);
   }
