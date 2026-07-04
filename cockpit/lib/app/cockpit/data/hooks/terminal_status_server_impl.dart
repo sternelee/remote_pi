@@ -8,8 +8,8 @@ import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
 import 'package:flutter/foundation.dart';
 
 /// [TerminalStatusServer] híbrido por plataforma:
-/// - **POSIX**: socket Unix em `~/.cockpit/status.sock` (permissão do arquivo
-///   já protege contra outros usuários).
+/// - **POSIX**: socket Unix em `~/.cockpit/status[-debug].sock` (permissão do
+///   arquivo já protege contra outros usuários).
 /// - **Windows**: TCP loopback `127.0.0.1:<porta-efêmera>` + **token**
 ///   (loopback é acessível por qualquer processo local; o token valida a
 ///   origem). O Dart não suporta socket Unix no Windows.
@@ -26,7 +26,16 @@ class TerminalStatusServerImpl implements TerminalStatusServer {
 
   String get _socketPath {
     final home = remotePiHome() ?? Directory.systemTemp.path;
-    return '$home/.cockpit/status.sock';
+    // Namespaceado por debug/release: um Cockpit de dev (`flutter run`) e um de
+    // produção rodam lado a lado, mas `~/.cockpit/` é o HOME real (não é isolado
+    // por bundle id como o Hive). Sem o sufixo, ambos disputam o MESMO
+    // `status.sock` — e o `start()` DELETA o do outro e faz bind por cima,
+    // roubando o roteamento: os hooks do app deslocado passam a reportar pro
+    // socket errado e o spinner daquele app fica preso até reiniciar. O env
+    // `COCKPIT_STATUS_SOCK` injetado carrega o path certo, e hook/CLI só leem do
+    // env, então basta variar aqui.
+    final suffix = kDebugMode ? '-debug' : '';
+    return '$home/.cockpit/status$suffix.sock';
   }
 
   @override
