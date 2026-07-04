@@ -705,7 +705,8 @@ class CockpitViewModel extends ChangeNotifier {
       if (home == null) return null;
       t = t == '~' ? home : '$home/${t.substring(2)}';
     }
-    final isAbsolute = t.startsWith('/') ||
+    final isAbsolute =
+        t.startsWith('/') ||
         (Platform.isWindows && RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(t));
     if (!isAbsolute) {
       if (cwd == null || cwd.isEmpty) return null;
@@ -1425,6 +1426,26 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Define o rótulo manual (nome estável) de uma aba e persiste o layout.
+  /// Diferente de [saveAgentConfig]: não mexe na identidade do agente/harness —
+  /// só no nome exibido/CLI, travando-o contra o título automático (OSC etc).
+  void setPaneLabel(String sessionId, String label) {
+    final s = _sessions[sessionId];
+    if (s == null) return;
+    s.setManualLabel(label);
+    _scheduleSave(s.projectId);
+    notifyListeners();
+  }
+
+  /// Restaura o título automático de uma aba (descarta o rótulo manual).
+  void resetPaneLabel(String sessionId) {
+    final s = _sessions[sessionId];
+    if (s == null) return;
+    s.clearManualLabel();
+    _scheduleSave(s.projectId);
+    notifyListeners();
+  }
+
   // ---- agent / tab / split operations (projeto ativo) -----------------------
   void focus(String paneId) {
     final id = _selectedProjectId;
@@ -1836,6 +1857,7 @@ class CockpitViewModel extends ChangeNotifier {
     String? title,
     String? replay,
     String? startupCommand,
+    String? manualLabel,
   }) {
     final t = TerminalSession(
       id: id,
@@ -1864,6 +1886,8 @@ class CockpitViewModel extends ChangeNotifier {
     t.onTurnFinished = () => unawaited(_notifyIfNeeded(t));
     // cwd vivo (OSC 7) mudou → persiste o layout pra restaurar o shell ali.
     t.onCwdChanged = () => _scheduleSave(projectId);
+    // Restauração: re-arma a trava de nome sem notificar (aba ainda não montada).
+    if (manualLabel != null) t.restoreManualLabel(manualLabel);
     _sessions[t.id] = t;
     return t;
   }
@@ -2010,6 +2034,11 @@ class CockpitViewModel extends ChangeNotifier {
                 'id': s.id,
                 'kind': _paneKind(s),
                 'title': s.title,
+                // Rótulo manual estável (duplo-clique / "Rename"); `null` quando
+                // a aba segue o título automático. É por ESTE campo que a
+                // orquestração resolve pane por nome — não pelo `title` dinâmico
+                // (que o claude/OSC reescrevem) nem pelo cwd (volátil).
+                'label': s.manualLabel,
                 'workspaceId': s.projectId,
                 'working': s.isWorking,
               },
@@ -2319,6 +2348,9 @@ class CockpitViewModel extends ChangeNotifier {
           startupCommand: claudeSid == null || claudeSid.isEmpty
               ? null
               : 'claude --resume $claudeSid',
+          // Re-arma a trava ANTES de o shell subir e re-emitir OSC-title: o nome
+          // manual continua vencendo o título dinâmico após o reinício.
+          manualLabel: desc['label'] as String?,
         );
         return true;
       case 'viewer':
@@ -2548,6 +2580,10 @@ class CockpitViewModel extends ChangeNotifier {
         'type': 'terminal',
         'sub': _subOf(s.workingDirectory, project.path),
         'title': s.title,
+        // Rótulo manual travado (se houver): persiste com o descritor da aba,
+        // que no restore é re-hidratado pela mesma chave de sessão → o nome
+        // estável sobrevive ao reinício e à re-emissão de OSC-title do shell.
+        if (s.manualLabel != null) 'label': s.manualLabel,
         // cwd vivo do shell (OSC 7), absoluto — o restore sobe o shell aqui (o
         // usuário pode ter dado `cd` pra fora do projeto). `sub` segue como
         // fallback pra abas que nunca emitiram OSC 7.

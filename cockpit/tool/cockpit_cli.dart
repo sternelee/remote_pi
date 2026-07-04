@@ -149,10 +149,16 @@ Future<void> _cmdList(String cmd, List<String> args) async {
   if (cmd == 'list-panes') {
     for (final e in data.cast<Map>()) {
       final flag = e['working'] == true ? '●' : ' ';
+      // Rótulo manual (nome estável) vence o título dinâmico; `⚲` sinaliza que
+      // está travado. Sem rótulo, mostra o título automático.
+      final label = e['label'];
+      final name = (label is String && label.isNotEmpty)
+          ? '⚲ $label'
+          : (e['title'] ?? '').toString();
       stdout.writeln(
         '$flag ${_pad(e['id']?.toString(), 6)} '
         '${_pad(e['kind']?.toString(), 9)} '
-        '${_pad(e['workspaceId']?.toString(), 8)} ${e['title'] ?? ''}',
+        '${_pad(e['workspaceId']?.toString(), 8)} $name',
       );
     }
   } else {
@@ -425,8 +431,9 @@ Cockpit tabs (it is not on the global PATH).
   (tab next to the terminal). `cockpit <file>` is the shortcut. The path is
   resolved against the pane cwd (relative, `~` and absolute all work). Any type
   opens as text — including extensionless ones (`.zprofile`, `Makefile`).
-- `cockpit list-panes [--json]` — active panes: `id`, `kind`, `title`,
-  `workspaceId`, `working`.
+- `cockpit list-panes [--json]` — active panes: `id`, `kind`, `title`
+  (dynamic), `label` (manual stable name, or null), `workspaceId`, `working`.
+  Resolve a pane by its stable `label`, not the dynamic `title`.
 - `cockpit list-workspaces [--json]` — open projects: `id`, `name`, `panes`.
 
 ## Target (--tab-id)

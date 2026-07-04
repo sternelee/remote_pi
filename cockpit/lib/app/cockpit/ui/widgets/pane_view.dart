@@ -262,7 +262,7 @@ class _TabStripState extends State<_TabStrip> {
         for (final id in pane.tabs)
           AppMenuItem(
             value: id,
-            label: widget.vm.session(id)?.title ?? '—',
+            label: widget.vm.session(id)?.displayTitle ?? '—',
             icon: _tabIcon(widget.vm.session(id)),
             selected: id == pane.active,
           ),
@@ -333,6 +333,10 @@ class _TabStripState extends State<_TabStrip> {
                                     widget.vm.closeTab(pane.id, pane.tabs[i]),
                                 onRename: (name) =>
                                     widget.onRenameAgent(pane.tabs[i], name),
+                                onSetLabel: (label) =>
+                                    widget.vm.setPaneLabel(pane.tabs[i], label),
+                                onResetLabel: () =>
+                                    widget.vm.resetPaneLabel(pane.tabs[i]),
                                 onToggleRelay: () =>
                                     widget.onToggleRelayAgent(pane.tabs[i]),
                                 onHistory: () =>
@@ -405,6 +409,8 @@ class _Tab extends StatefulWidget {
     required this.onSelect,
     required this.onClose,
     required this.onRename,
+    required this.onSetLabel,
+    required this.onResetLabel,
     required this.onToggleRelay,
     required this.onHistory,
   });
@@ -415,7 +421,16 @@ class _Tab extends StatefulWidget {
   final bool focused;
   final VoidCallback onSelect;
   final VoidCallback onClose;
+
+  /// Renomeia um **agente** (muda a identidade enviada ao harness).
   final ValueChanged<String> onRename;
+
+  /// Define o **rótulo manual** de uma aba de terminal (nome estável, travado
+  /// contra o título automático).
+  final ValueChanged<String> onSetLabel;
+
+  /// Restaura o título automático de uma aba de terminal (limpa o rótulo).
+  final VoidCallback onResetLabel;
   final VoidCallback onToggleRelay;
   final VoidCallback onHistory;
 
@@ -462,7 +477,12 @@ class _TabState extends State<_Tab> {
     final s = widget.item;
     final agent = s is AgentSession ? s : null;
     final viewer = s is FileViewerSession ? s : null;
-    final canRename = agent != null && agent.status != AgentStatus.empty;
+    final terminal = s is TerminalSession ? s : null;
+    // Renomear entra em edição inline: agentes (não-vazios) mudam a identidade;
+    // terminais definem o rótulo manual (nome estável).
+    final canRename =
+        (agent != null && agent.status != AgentStatus.empty) ||
+        terminal != null;
     final canPin = viewer != null && viewer.isPreview;
     final now = DateTime.now();
     final last = _lastTapAt;
@@ -486,12 +506,12 @@ class _TabState extends State<_Tab> {
 
   void _startEditing() {
     final s = widget.item;
-    if (s is! AgentSession) return;
-    _ctrl.text = s.title;
-    _ctrl.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: s.title.length,
-    );
+    // Agentes e terminais podem editar o nome inline; demais abas não.
+    if (s == null || (s is! AgentSession && s is! TerminalSession)) return;
+    // Semeia com o nome exibido (rótulo manual, se houver; senão o dinâmico).
+    final seed = s.displayTitle;
+    _ctrl.text = seed;
+    _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: seed.length);
     setState(() => _editing = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focus.requestFocus();
@@ -500,9 +520,16 @@ class _TabState extends State<_Tab> {
 
   void _commitEdit() {
     if (!_editing) return;
+    final s = widget.item;
     final name = _ctrl.text.trim().replaceAll(' ', '-');
     setState(() => _editing = false);
-    if (name.isNotEmpty) widget.onRename(name);
+    if (name.isEmpty) return;
+    // Terminal → rótulo manual travado; agente → renomeia a identidade.
+    if (s is TerminalSession) {
+      widget.onSetLabel(name);
+    } else {
+      widget.onRename(name);
+    }
   }
 
   void _cancelEdit() {
@@ -557,12 +584,25 @@ class _TabState extends State<_Tab> {
           ),
         // Só em abas de terminal: o id (pane id) copiável pra usar na CLI
         // `cockpit` (`--tab-id`).
-        if (terminal != null)
+        if (terminal != null) ...[
+          const AppMenuItem(
+            value: 'rename',
+            label: 'Rename',
+            icon: Icons.edit_outlined,
+          ),
+          // Só oferecido quando há rótulo manual travado.
+          if (terminal.titleLocked)
+            const AppMenuItem(
+              value: 'reset-label',
+              label: 'Reset Title',
+              icon: Icons.restart_alt,
+            ),
           const AppMenuItem(
             value: 'copy-id',
             label: 'Copy tab id',
             icon: Icons.content_copy,
           ),
+        ],
         if (agent != null && !isEmpty) ...[
           const AppMenuItem(
             value: 'rename',
@@ -594,6 +634,8 @@ class _TabState extends State<_Tab> {
         }
       case 'rename':
         _startEditing();
+      case 'reset-label':
+        widget.onResetLabel();
       case 'relay':
         widget.onToggleRelay();
       case 'history':
@@ -622,7 +664,7 @@ class _TabState extends State<_Tab> {
         // Título: texto normal ou campo inline ao renomear.
         // Preview tabs usam itálico (estilo VSCode).
         final isPreview = s is FileViewerSession && s.isPreview;
-        final titleWidget = _editing && agent != null
+        final titleWidget = _editing
             ? CallbackShortcuts(
                 bindings: {
                   const SingleActivator(LogicalKeyboardKey.escape): _cancelEdit,
@@ -646,7 +688,7 @@ class _TabState extends State<_Tab> {
                 ),
               )
             : Text(
-                s.title,
+                s.displayTitle,
                 overflow: TextOverflow.ellipsis,
                 style: context.typo.tab.copyWith(
                   color: isFocusedActive || widget.active
@@ -732,7 +774,7 @@ class _TabState extends State<_Tab> {
           dragAnchorStrategy: pointerDragAnchorStrategy,
           feedback: Transform.translate(
             offset: const Offset(12, 8),
-            child: _DragFeedback(icon: icon, title: s.title),
+            child: _DragFeedback(icon: icon, title: s.displayTitle),
           ),
           childWhenDragging: Opacity(opacity: 0.3, child: tabBody),
           child: interactive,
@@ -1162,9 +1204,8 @@ class _PaneBodyState extends State<_PaneBody> {
               onKeyEvent: (event) => _onTerminalKey(event, item),
               // Cmd+clique num caminho de arquivo do buffer → abre no FileViewer,
               // resolvido contra o cwd vivo do shell (OSC 7).
-              onOpenFile: (path, {line}) => context
-                  .read<CockpitViewModel>()
-                  .openTerminalPath(
+              onOpenFile: (path, {line}) =>
+                  context.read<CockpitViewModel>().openTerminalPath(
                     path,
                     cwd: item.currentDirectory,
                     line: line,
