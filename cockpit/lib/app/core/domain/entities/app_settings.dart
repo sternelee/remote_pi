@@ -27,6 +27,8 @@ class AppSettings {
     this.searchPanelHeight = 260,
     this.tasksPanelHeight = 200,
     this.enableAgent = false,
+    this.railVisible = false,
+    this.treeVisible = false,
   });
 
   final AppThemeMode themeMode;
@@ -90,6 +92,14 @@ class AppSettings {
   /// Com ela desligada, o app não oferece criar aba de agente (só terminal).
   final bool enableAgent;
 
+  /// Visibilidade do painel esquerdo (rail de projetos). Persistido entre
+  /// sessões; fechado por padrão em instalações novas.
+  final bool railVisible;
+
+  /// Visibilidade do painel direito (árvore de arquivos). Persistido entre
+  /// sessões; fechado por padrão em instalações novas.
+  final bool treeVisible;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     String? interfaceFont,
@@ -111,6 +121,8 @@ class AppSettings {
     double? searchPanelHeight,
     double? tasksPanelHeight,
     bool? enableAgent,
+    bool? railVisible,
+    bool? treeVisible,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -134,6 +146,8 @@ class AppSettings {
       searchPanelHeight: searchPanelHeight ?? this.searchPanelHeight,
       tasksPanelHeight: tasksPanelHeight ?? this.tasksPanelHeight,
       enableAgent: enableAgent ?? this.enableAgent,
+      railVisible: railVisible ?? this.railVisible,
+      treeVisible: treeVisible ?? this.treeVisible,
     );
   }
 
@@ -157,6 +171,8 @@ class AppSettings {
     // Sempre gravado (mesmo quando false) para a migração distinguir "install
     // novo" (chave presente = false) de "upgrade sem a flag" (chave ausente).
     'enableAgent': enableAgent,
+    if (railVisible) 'railVisible': true,
+    if (treeVisible) 'treeVisible': true,
   };
 
   factory AppSettings.fromJson(Map<dynamic, dynamic> json) {
@@ -192,6 +208,8 @@ class AppSettings {
           (json['searchPanelHeight'] as num?)?.toDouble() ?? 260,
       tasksPanelHeight: (json['tasksPanelHeight'] as num?)?.toDouble() ?? 200,
       enableAgent: json['enableAgent'] as bool? ?? false,
+      railVisible: json['railVisible'] as bool? ?? false,
+      treeVisible: json['treeVisible'] as bool? ?? false,
     );
   }
 }

@@ -171,9 +171,25 @@ class CockpitViewModel extends ChangeNotifier {
   String? _selectedFileInTree;
   String? get selectedFileInTree => _selectedFileInTree;
 
-  bool _railVisible = true;
-  bool _treeVisible = true;
+  bool _railVisible = false;
+  bool _treeVisible = false;
   bool _ready = false;
+
+  /// Persiste a visibilidade dos painéis (rail/árvore). A `CockpitPage` injeta o
+  /// callback que grava no `SettingsController` app-scoped (a VM é page-scoped e
+  /// não o enxerga). Chamado a cada mudança de visibilidade.
+  void Function(bool rail, bool tree)? onPanelVisibilityChanged;
+
+  /// Restaura a visibilidade dos painéis a partir das preferências salvas.
+  /// Chamado uma vez pela página no mount, sem persistir de volta.
+  void restorePanelVisibility({required bool rail, required bool tree}) {
+    _railVisible = rail;
+    _treeVisible = tree;
+    notifyListeners();
+  }
+
+  void _persistPanels() =>
+      onPanelVisibilityChanged?.call(_railVisible, _treeVisible);
   int _seq = 0;
 
   /// Espelha `AppSettings.notificationsEnabled` (app-scoped, fora do grafo desta
@@ -550,6 +566,7 @@ class CockpitViewModel extends ChangeNotifier {
   void showTree() {
     if (_treeVisible) return;
     _treeVisible = true;
+    _persistPanels();
     notifyListeners();
   }
 
@@ -1443,11 +1460,13 @@ class CockpitViewModel extends ChangeNotifier {
 
   void toggleRail() {
     _railVisible = !_railVisible;
+    _persistPanels();
     notifyListeners();
   }
 
   void toggleTree() {
     _treeVisible = !_treeVisible;
+    _persistPanels();
     notifyListeners();
   }
 
