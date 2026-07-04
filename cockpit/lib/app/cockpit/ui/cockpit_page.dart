@@ -725,10 +725,19 @@ class _CockpitPageState extends State<CockpitPage> {
           vm: vm,
           focused: node.id == vm.focusedPaneId(projectId),
           onCreateTab: () => vm.newEmptyTab(node.id),
-          // Terminal abre direto na raiz do workspace; agente pergunta a subpasta.
-          onSplit: (dir) => vm.paneActiveIsTerminal(node.id)
-              ? vm.splitPane(node.id, dir, '')
-              : _pickSubfolderThen((sub) => vm.splitPane(node.id, dir, sub)),
+          // Aba placeholder "Novo" (nem agente nem terminal): o novo pane vira
+          // outro placeholder com o seletor Agent/Terminal (ou terminal direto
+          // se `enableAgent` está off). Terminal abre na raiz; agente pergunta
+          // a subpasta.
+          onSplit: (dir) {
+            if (vm.paneActiveIsEmpty(node.id)) {
+              vm.splitPaneEmpty(node.id, dir);
+            } else if (vm.paneActiveIsTerminal(node.id)) {
+              vm.splitPane(node.id, dir, '');
+            } else {
+              _pickSubfolderThen((sub) => vm.splitPane(node.id, dir, sub));
+            }
+          },
           onFillEmpty: (emptyId, terminal) => terminal
               ? vm.fillEmpty(node.id, emptyId, '', terminal: true)
               : _pickSubfolderThen(

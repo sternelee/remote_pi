@@ -1526,6 +1526,34 @@ class CockpitViewModel extends ChangeNotifier {
     return active is TerminalSession;
   }
 
+  /// `true` se a aba ativa da pane [paneId] é um placeholder "Novo" (ainda não
+  /// virou agente nem terminal). O split usa isso pra criar outro placeholder
+  /// — que mostra o seletor Agent/Terminal — em vez de espelhar um tipo que
+  /// ainda não existe (o que hoje spawaria um agente indevidamente).
+  bool paneActiveIsEmpty(String paneId) {
+    final tree = _activeTree;
+    if (tree == null) return false;
+    final leaf = findLeaf(tree, paneId);
+    final active = leaf == null ? null : _sessions[leaf.active];
+    return active is AgentSession && active.status == AgentStatus.empty;
+  }
+
+  /// Divide a pane criando uma aba "Novo" (placeholder vazio) ao lado/abaixo.
+  /// Usada quando a aba ativa da pane de origem ainda é um placeholder (não é
+  /// agente nem terminal): o novo pane mostra o mesmo seletor Agent/Terminal
+  /// do "+" — ou cai direto em terminal quando `enableAgent` está off (a
+  /// conversão automática vive no [EmptyPane], então não precisa decidir aqui).
+  void splitPaneEmpty(String paneId, SplitDir dir) {
+    final projectId = _selectedProjectId;
+    final tree = _activeTree;
+    if (projectId == null || tree == null) return;
+    final empty = _makeEmpty(projectId);
+    final newLeaf = LeafPane(id: _nid('pane'), tabs: [empty.id], active: empty.id);
+    _setActiveTree(splitLeaf(tree, paneId, dir, newLeaf, splitId: _nid('sp')));
+    _focused[projectId] = newLeaf.id;
+    notifyListeners();
+  }
+
   /// Divide a pane criando um agente novo ao lado/abaixo.
   void splitPane(String paneId, SplitDir dir, String subRelative) {
     final tree = _activeTree;
