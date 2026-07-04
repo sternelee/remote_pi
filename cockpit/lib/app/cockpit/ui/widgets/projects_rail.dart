@@ -28,6 +28,8 @@ class ProjectsRail extends StatefulWidget {
     required this.onRemoveWorktree,
     required this.onOpenSettings,
     required this.onReorder,
+    this.cockpit,
+    required this.onSelectCockpit,
     this.width = 252,
   });
 
@@ -36,6 +38,13 @@ class ProjectsRail extends StatefulWidget {
 
   /// Só os workspaces raiz; as worktrees vêm por [worktreesOf].
   final List<Project> projects;
+
+  /// O workspace de sistema "Cockpit" (terminal-only), renderizado num slot
+  /// fixo no topo, separado da lista de projetos. `null` quando desabilitado.
+  final Project? cockpit;
+
+  /// Seleciona o workspace de sistema "Cockpit".
+  final VoidCallback onSelectCockpit;
 
   /// Worktrees (forks) de um workspace raiz, na ordem do git.
   final List<Project> Function(String rootId) worktreesOf;
@@ -115,17 +124,26 @@ class _ProjectsRailState extends State<ProjectsRail> {
                   style: context.typo.title.copyWith(color: colors.text),
                 ),
                 const Spacer(),
-                // Sem "+" quando não há workspace: a criação fica centralizada
-                // no onboarding da tela vazia.
-                if (projects.isNotEmpty)
-                  _SmallIcon(
-                    icon: Icons.add,
-                    tooltip: 'New workspace',
-                    onTap: () => onAdd(),
-                  ),
+                // "+" sempre visível: com o Cockpit fixo no topo o rail nunca
+                // fica realmente vazio, e criar workspace precisa estar à mão.
+                _SmallIcon(
+                  icon: Icons.add,
+                  tooltip: 'New workspace',
+                  onTap: () => onAdd(),
+                ),
               ],
             ),
           ),
+          // Slot fixo do workspace de sistema "Cockpit" (terminal-only), acima
+          // e separado da lista de projetos. Sem avatar/imagem, sem menu ⋮.
+          if (widget.cockpit != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              child: _CockpitSlot(
+                selected: widget.cockpit!.id == widget.selectedId,
+                onTap: widget.onSelectCockpit,
+              ),
+            ),
           Expanded(
             child: projects.isEmpty
                 ? const _EmptyRail()
@@ -208,6 +226,53 @@ class _ProjectsRailState extends State<ProjectsRail> {
                   onTap: widget.onOpenSettings,
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Slot fixo do workspace de sistema "Cockpit": glifo de terminal + rótulo, sem
+/// avatar/imagem, sem menu de contexto (não é um projeto — não pode ser
+/// renomeado, excluído nem virar worktree). Selecionável como os demais.
+class _CockpitSlot extends StatelessWidget {
+  const _CockpitSlot({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return HoverTap(
+      color: selected ? colors.panel2 : Colors.transparent,
+      borderRadius: BorderRadius.circular(7),
+      onTap: onTap,
+      padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: colors.panel,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: colors.border),
+            ),
+            child: Icon(Icons.terminal, size: 17, color: colors.text2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Cockpit',
+              overflow: TextOverflow.ellipsis,
+              style: context.typo.body.copyWith(
+                fontSize: 13.5,
+                color: colors.text,
+                fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+              ),
             ),
           ),
         ],

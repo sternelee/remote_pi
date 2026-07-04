@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 class WorkspaceMenuBridge extends ChangeNotifier {
   bool _hasWorkspace = false;
   bool _agentTabsInUse = false;
+  bool _agentsAllowed = true;
   VoidCallback? _onNewAgent;
   VoidCallback? _onNewTerminal;
   VoidCallback? _onSplitRight;
@@ -24,6 +25,10 @@ class WorkspaceMenuBridge extends ChangeNotifier {
   /// antes fechar as abas de agente (cross-route: a VM do shell é page-scoped).
   bool get agentTabsInUse => _agentTabsInUse;
 
+  /// `false` no workspace de sistema "Cockpit" (terminal-only): o item
+  /// "New Agent" fica indisponível mesmo com `enableAgent` ligado.
+  bool get agentsAllowed => _agentsAllowed;
+
   void newAgent() => _onNewAgent?.call();
   void newTerminal() => _onNewTerminal?.call();
   void splitRight() => _onSplitRight?.call();
@@ -37,6 +42,7 @@ class WorkspaceMenuBridge extends ChangeNotifier {
   void setWorkspace({
     required bool hasWorkspace,
     bool agentTabsInUse = false,
+    bool agentsAllowed = true,
     VoidCallback? onNewAgent,
     VoidCallback? onNewTerminal,
     VoidCallback? onSplitRight,
@@ -50,11 +56,14 @@ class WorkspaceMenuBridge extends ChangeNotifier {
     _onSplitDown = onSplitDown;
     _onToggleRail = onToggleRail;
     _onToggleFiles = onToggleFiles;
-    if (hasWorkspace == _hasWorkspace && agentTabsInUse == _agentTabsInUse) {
+    if (hasWorkspace == _hasWorkspace &&
+        agentTabsInUse == _agentTabsInUse &&
+        agentsAllowed == _agentsAllowed) {
       return;
     }
     _hasWorkspace = hasWorkspace;
     _agentTabsInUse = agentTabsInUse;
+    _agentsAllowed = agentsAllowed;
     notifyListeners();
   }
 }

@@ -357,6 +357,24 @@ class _GeneralPanel extends StatelessWidget {
                   ],
                 ),
               ),
+              _Section(
+                label: 'Cockpit',
+                child: _Card(
+                  children: [
+                    _Row(
+                      title: 'Show Cockpit terminal',
+                      description:
+                          'Keep a pathless, terminal-only workspace pinned at '
+                          'the top of the rail. Turning it off closes its '
+                          'terminals.',
+                      trailing: Switch(
+                        value: s.showCockpit,
+                        onChanged: controller.setShowCockpit,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),

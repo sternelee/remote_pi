@@ -53,8 +53,9 @@ List<MenuBarMenu> buildAppMenus(
     MenuBarMenu('File', <MenuNode>[
       // New Agent/Terminal abrem uma aba no workspace ativo (via CockpitPage →
       // newTabIn). Só habilitam quando há workspace selecionado. "New Agent" só
-      // aparece quando o suporte a agentes está ligado (Settings → General).
-      if (controller.settings.enableAgent)
+      // aparece quando o suporte a agentes está ligado (Settings → General) e o
+      // workspace ativo permite agentes (o Cockpit terminal-only não permite).
+      if (controller.settings.enableAgent && workspace.agentsAllowed)
         MenuAction(
           'New Agent',
           onSelected: workspace.hasWorkspace ? workspace.newAgent : null,
@@ -87,7 +88,10 @@ List<MenuBarMenu> buildAppMenus(
       ),
       MenuAction(
         'Format',
-        accelerator: const MenuAccelerator(LogicalKeyboardKey.keyF, shift: true),
+        accelerator: const MenuAccelerator(
+          LogicalKeyboardKey.keyF,
+          shift: true,
+        ),
         shortcutHandledExternally: true,
         onSelected: editor.canFormat ? editor.format : null,
       ),
@@ -105,7 +109,10 @@ List<MenuBarMenu> buildAppMenus(
       ),
       MenuAction(
         'Toggle Files',
-        accelerator: const MenuAccelerator(LogicalKeyboardKey.keyB, shift: true),
+        accelerator: const MenuAccelerator(
+          LogicalKeyboardKey.keyB,
+          shift: true,
+        ),
         onSelected: workspace.hasWorkspace ? workspace.toggleFiles : null,
       ),
       const MenuSeparator(),
@@ -116,7 +123,10 @@ List<MenuBarMenu> buildAppMenus(
       ),
       MenuAction(
         'Split Down',
-        accelerator: const MenuAccelerator(LogicalKeyboardKey.keyD, shift: true),
+        accelerator: const MenuAccelerator(
+          LogicalKeyboardKey.keyD,
+          shift: true,
+        ),
         onSelected: workspace.hasWorkspace ? workspace.splitDown : null,
       ),
       const MenuSeparator(),

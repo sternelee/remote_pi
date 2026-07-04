@@ -283,82 +283,83 @@ class _TabStripState extends State<_TabStrip> {
       vm: widget.vm,
       paneId: pane.id,
       child: Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: colors.bg,
-        border: Border(bottom: BorderSide(color: colors.border)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: MouseRegion(
-              onEnter: (_) => _setHover(true),
-              onExit: (_) => _setHover(false),
-              child: Scrollbar(
-                controller: _scroll,
-                // Só aparece com o mouse em cima (e quando há overflow).
-                thumbVisibility: _hovering && _overflowing,
-                thickness: 3,
-                radius: const Radius.circular(3),
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: SingleChildScrollView(
-                    controller: _scroll,
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < pane.tabs.length; i++)
-                          _TabDropSlot(
-                            index: i,
-                            onInsert: (data, index) => widget.vm.moveTabToIndex(
-                              data.paneId,
-                              data.tabId,
-                              pane.id,
-                              index,
+        height: 40,
+        decoration: BoxDecoration(
+          color: colors.bg,
+          border: Border(bottom: BorderSide(color: colors.border)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: MouseRegion(
+                onEnter: (_) => _setHover(true),
+                onExit: (_) => _setHover(false),
+                child: Scrollbar(
+                  controller: _scroll,
+                  // Só aparece com o mouse em cima (e quando há overflow).
+                  thumbVisibility: _hovering && _overflowing,
+                  thickness: 3,
+                  radius: const Radius.circular(3),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: SingleChildScrollView(
+                      controller: _scroll,
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (var i = 0; i < pane.tabs.length; i++)
+                            _TabDropSlot(
+                              index: i,
+                              onInsert: (data, index) =>
+                                  widget.vm.moveTabToIndex(
+                                    data.paneId,
+                                    data.tabId,
+                                    pane.id,
+                                    index,
+                                  ),
+                              child: _Tab(
+                                item: widget.vm.session(pane.tabs[i]),
+                                paneId: pane.id,
+                                active: pane.tabs[i] == pane.active,
+                                focused: widget.focused,
+                                onSelect: () =>
+                                    widget.vm.selectTab(pane.id, pane.tabs[i]),
+                                onClose: () =>
+                                    widget.vm.closeTab(pane.id, pane.tabs[i]),
+                                onRename: (name) =>
+                                    widget.onRenameAgent(pane.tabs[i], name),
+                                onToggleRelay: () =>
+                                    widget.onToggleRelayAgent(pane.tabs[i]),
+                                onHistory: () =>
+                                    widget.onHistoryAgent(pane.tabs[i]),
+                              ),
                             ),
-                            child: _Tab(
-                              item: widget.vm.session(pane.tabs[i]),
-                              paneId: pane.id,
-                              active: pane.tabs[i] == pane.active,
-                              focused: widget.focused,
-                              onSelect: () =>
-                                  widget.vm.selectTab(pane.id, pane.tabs[i]),
-                              onClose: () =>
-                                  widget.vm.closeTab(pane.id, pane.tabs[i]),
-                              onRename: (name) =>
-                                  widget.onRenameAgent(pane.tabs[i], name),
-                              onToggleRelay: () =>
-                                  widget.onToggleRelayAgent(pane.tabs[i]),
-                              onHistory: () =>
-                                  widget.onHistoryAgent(pane.tabs[i]),
-                            ),
-                          ),
-                        _TabAdd(onTap: widget.onCreateTab),
-                      ],
+                          _TabAdd(onTap: widget.onCreateTab),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          // Overflow: lista todas as abas pra pular direto (só quando estoura).
-          if (_overflowing)
-            Builder(
-              builder: (ctx) => _StripButton(
-                icon: Icons.keyboard_arrow_down,
-                tooltip: 'All tabs',
-                onTap: () => _showTabList(ctx),
+            // Overflow: lista todas as abas pra pular direto (só quando estoura).
+            if (_overflowing)
+              Builder(
+                builder: (ctx) => _StripButton(
+                  icon: Icons.keyboard_arrow_down,
+                  tooltip: 'All tabs',
+                  onTap: () => _showTabList(ctx),
+                ),
               ),
+            _PaneTools(
+              onSplitRight: () => widget.onSplit(SplitDir.vertical),
+              onSplitDown: () => widget.onSplit(SplitDir.horizontal),
+              onClosePane: () => _confirmClosePane(context),
             ),
-          _PaneTools(
-            onSplitRight: () => widget.onSplit(SplitDir.vertical),
-            onSplitDown: () => widget.onSplit(SplitDir.horizontal),
-            onClosePane: () => _confirmClosePane(context),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1151,8 +1152,13 @@ class _PaneBodyState extends State<_PaneBody> {
       listenable: agent,
       builder: (context, _) {
         if (agent.status == AgentStatus.empty) {
+          // No workspace de sistema "Cockpit" agentes são desligados **sempre**
+          // (terminal-only por construção), independente da flag global.
           final enableAgent =
-              context.watch<SettingsController>().settings.enableAgent;
+              context.watch<SettingsController>().settings.enableAgent &&
+              !context.read<CockpitViewModel>().isSystemTerminal(
+                agent.projectId,
+              );
           // Suporte a agentes desligado → a aba vazia vira **terminal direto**,
           // sem oferecer a escolha agente/terminal. Guard por id (não reentra no
           // build; cobre uma nova aba vazia criada depois na mesma pane).

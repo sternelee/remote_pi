@@ -29,6 +29,7 @@ class AppSettings {
     this.enableAgent = false,
     this.railVisible = false,
     this.treeVisible = false,
+    this.showCockpit = true,
   });
 
   final AppThemeMode themeMode;
@@ -100,6 +101,12 @@ class AppSettings {
   /// sessões; fechado por padrão em instalações novas.
   final bool treeVisible;
 
+  /// Mostra o workspace de sistema "Cockpit" (terminal-only, sem pasta) fixo no
+  /// topo do rail. Ligado por padrão; desligar remove o slot e mata seus PTYs.
+  /// Persistido; migração liga automático para quem já usava (ver
+  /// `HiveSettingsStore.load`).
+  final bool showCockpit;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     String? interfaceFont,
@@ -123,6 +130,7 @@ class AppSettings {
     bool? enableAgent,
     bool? railVisible,
     bool? treeVisible,
+    bool? showCockpit,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -148,6 +156,7 @@ class AppSettings {
       enableAgent: enableAgent ?? this.enableAgent,
       railVisible: railVisible ?? this.railVisible,
       treeVisible: treeVisible ?? this.treeVisible,
+      showCockpit: showCockpit ?? this.showCockpit,
     );
   }
 
@@ -173,6 +182,9 @@ class AppSettings {
     'enableAgent': enableAgent,
     if (railVisible) 'railVisible': true,
     if (treeVisible) 'treeVisible': true,
+    // Sempre gravado: a migração distingue "install novo" (chave presente) de
+    // "upgrade sem a flag" (chave ausente → liga automático).
+    'showCockpit': showCockpit,
   };
 
   factory AppSettings.fromJson(Map<dynamic, dynamic> json) {
@@ -204,12 +216,12 @@ class AppSettings {
       formatOnSave: json['formatOnSave'] as bool? ?? false,
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
       soundEnabled: json['soundEnabled'] as bool? ?? true,
-      searchPanelHeight:
-          (json['searchPanelHeight'] as num?)?.toDouble() ?? 260,
+      searchPanelHeight: (json['searchPanelHeight'] as num?)?.toDouble() ?? 260,
       tasksPanelHeight: (json['tasksPanelHeight'] as num?)?.toDouble() ?? 200,
       enableAgent: json['enableAgent'] as bool? ?? false,
       railVisible: json['railVisible'] as bool? ?? false,
       treeVisible: json['treeVisible'] as bool? ?? false,
+      showCockpit: json['showCockpit'] as bool? ?? true,
     );
   }
 }

@@ -21,6 +21,7 @@ class CockpitTopbar extends StatelessWidget {
     required this.treeVisible,
     required this.onToggleRail,
     required this.onToggleTree,
+    this.filesEnabled = true,
   });
 
   final String projectName;
@@ -28,6 +29,10 @@ class CockpitTopbar extends StatelessWidget {
   final bool treeVisible;
   final VoidCallback onToggleRail;
   final VoidCallback onToggleTree;
+
+  /// Habilita o botão de árvore de arquivos. `false` no workspace de sistema
+  /// "Cockpit" (sem pasta → sem árvore): o botão fica visível porém inerte.
+  final bool filesEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -62,8 +67,11 @@ class CockpitTopbar extends StatelessWidget {
         const Spacer(),
         _IconBtn(
           icon: Icons.view_sidebar_outlined,
-          tooltip: 'Show/hide files',
-          active: !treeVisible,
+          tooltip: filesEnabled
+              ? 'Show/hide files'
+              : 'Files unavailable in Cockpit',
+          active: !treeVisible && filesEnabled,
+          enabled: filesEnabled,
           onTap: onToggleTree,
         ),
         const WindowControlsTrailing(),
@@ -72,38 +80,38 @@ class CockpitTopbar extends StatelessWidget {
   }
 }
 
-
 class _IconBtn extends StatelessWidget {
   const _IconBtn({
     required this.icon,
     required this.tooltip,
     required this.onTap,
     this.active = false,
+    this.enabled = true,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
   final bool active;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final iconColor = !enabled
+        ? colors.text3.withValues(alpha: 0.35)
+        : (active ? colors.accentText : colors.text3);
     return Tooltip(
       tooltip: (context) => TooltipContainer(child: Text(tooltip)),
       child: HoverTap(
-        onTap: onTap,
+        onTap: enabled ? onTap : () {},
         color: active ? colors.accentSoft : null,
-        hoverColor: colors.panel3,
+        hoverColor: enabled ? colors.panel3 : null,
         borderRadius: BorderRadius.circular(5),
         child: SizedBox(
           width: 28,
           height: 28,
-          child: Icon(
-            icon,
-            size: 17,
-            color: active ? colors.accentText : colors.text3,
-          ),
+          child: Icon(icon, size: 17, color: iconColor),
         ),
       ),
     );

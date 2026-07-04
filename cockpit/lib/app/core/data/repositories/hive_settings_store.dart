@@ -26,6 +26,14 @@ class HiveSettingsStore implements SettingsStore {
         await save(migrated);
         return migrated;
       }
+      // Migração: registro sem `showCockpit` (versão anterior à flag) → liga o
+      // workspace de sistema e persiste (default já é true; grava pra não
+      // re-migrar e alinhar com o padrão de `enableAgent`).
+      if (!raw.containsKey('showCockpit')) {
+        final migrated = settings.copyWith(showCockpit: true);
+        await save(migrated);
+        return migrated;
+      }
       return settings;
     }
     return const AppSettings();

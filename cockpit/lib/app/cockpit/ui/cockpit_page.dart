@@ -81,9 +81,11 @@ class _CockpitPageState extends State<CockpitPage> {
     // empurra o estado atual e re-empurra a cada mudança das Configurações.
     _settings = context.read<SettingsController>()
       ..addListener(_syncLspCommands)
-      ..addListener(_syncNotifications);
+      ..addListener(_syncNotifications)
+      ..addListener(_syncCockpit);
     _syncLspCommands();
     _syncNotifications();
+    _syncCockpit();
     // Restaura a visibilidade dos painéis (rail/árvore) salva na sessão anterior
     // e persiste de volta a cada toggle. A VM é a fonte de verdade em runtime.
     final vm = context.read<CockpitViewModel>();
@@ -120,6 +122,8 @@ class _CockpitPageState extends State<CockpitPage> {
     _workspaceMenu?.setWorkspace(
       hasWorkspace: vm.selectedProject != null,
       agentTabsInUse: vm.hasAgentTabsInUse,
+      // Cockpit é terminal-only → sem "New Agent" no menu File.
+      agentsAllowed: !vm.isSystemTerminal(vm.selectedProjectId),
       // Agente pergunta a subpasta onde vai atuar (igual ao fluxo direto de
       // criar agente); terminal abre direto na raiz do workspace.
       onNewAgent: () => unawaited(
@@ -156,6 +160,13 @@ class _CockpitPageState extends State<CockpitPage> {
     _vm.setSoundEnabled(_settings!.settings.soundEnabled);
   }
 
+  /// Espelha o toggle "Show Cockpit terminal" (Configurações › General) para a
+  /// VM, que injeta/remove o workspace de sistema em runtime (matando os PTYs no
+  /// desligar). A VM é page-scoped e não vê o `SettingsController` app-scoped.
+  void _syncCockpit() {
+    _vm.setCockpitEnabled(_settings!.settings.showCockpit);
+  }
+
   void _syncLspCommands() {
     final next = _settings!.settings.lspCommands;
     _vm.applyLspCommands(next);
@@ -174,6 +185,7 @@ class _CockpitPageState extends State<CockpitPage> {
   void dispose() {
     _settings?.removeListener(_syncLspCommands);
     _settings?.removeListener(_syncNotifications);
+    _settings?.removeListener(_syncCockpit);
     _menuVm?.removeListener(_syncWorkspaceMenu);
     _workspaceMenu?.setWorkspace(hasWorkspace: false);
     if (requestFocusActiveComposer == _focusActiveComposer) {
@@ -431,24 +443,20 @@ class _CockpitPageState extends State<CockpitPage> {
   /// ⌘L (macOS) / Ctrl+L (Win/Linux): foca o input do agente focado quando o
   /// foco está dentro do shell. (Fora dele — clique no vazio — quem dispara é a
   /// ponte global de `main.dart`; ver [requestFocusActiveComposer].)
-  Map<ShortcutActivator, VoidCallback> _focusComposerBindings() =>
-      <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyL, meta: true):
-            _focusActiveComposer,
-        const SingleActivator(LogicalKeyboardKey.keyL, control: true):
-            _focusActiveComposer,
-        const SingleActivator(LogicalKeyboardKey.keyP, meta: true):
-            _openFileFinder,
-        const SingleActivator(LogicalKeyboardKey.keyP, control: true):
-            _openFileFinder,
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true):
-            _focusContentSearch,
-        const SingleActivator(
-          LogicalKeyboardKey.keyF,
-          control: true,
-          shift: true,
-        ): _focusContentSearch,
-      };
+  Map<ShortcutActivator, VoidCallback>
+  _focusComposerBindings() => <ShortcutActivator, VoidCallback>{
+    const SingleActivator(LogicalKeyboardKey.keyL, meta: true):
+        _focusActiveComposer,
+    const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+        _focusActiveComposer,
+    const SingleActivator(LogicalKeyboardKey.keyP, meta: true): _openFileFinder,
+    const SingleActivator(LogicalKeyboardKey.keyP, control: true):
+        _openFileFinder,
+    const SingleActivator(LogicalKeyboardKey.keyF, meta: true, shift: true):
+        _focusContentSearch,
+    const SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true):
+        _focusContentSearch,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -479,6 +487,7 @@ class _CockpitPageState extends State<CockpitPage> {
                 treeVisible: vm.treeVisible,
                 onToggleRail: vm.toggleRail,
                 onToggleTree: vm.toggleTree,
+                filesEnabled: !vm.isSystemTerminal(vm.selectedProjectId),
               ),
               Expanded(
                 child: Row(
@@ -507,6 +516,9 @@ class _CockpitPageState extends State<CockpitPage> {
                                 ),
                             onOpenSettings: () =>
                                 context.pushNamed(RoutePaths.settings),
+                            cockpit: vm.cockpitWorkspace,
+                            onSelectCockpit: () =>
+                                vm.selectProject(Project.cockpitId),
                           ),
                           // Alça de arraste na borda direita (direita = alarga).
                           Positioned(
@@ -544,7 +556,10 @@ class _CockpitPageState extends State<CockpitPage> {
                               ],
                             ),
                     ),
-                    if (vm.treeVisible)
+                    // Cockpit (sem pasta) nunca mostra a árvore/tasks/busca,
+                    // mesmo com `treeVisible` persistido de outro workspace.
+                    if (vm.treeVisible &&
+                        !vm.isSystemTerminal(vm.selectedProjectId))
                       Stack(
                         children: [
                           FileTreePanel(
@@ -577,10 +592,8 @@ class _CockpitPageState extends State<CockpitPage> {
                                     focusSignal: _searchFocusSignal,
                                     resultsHeight: _searchHeight,
                                     onResizeDelta: (dy) => setState(() {
-                                      _searchHeight = (_searchHeight - dy).clamp(
-                                        _searchMin,
-                                        _searchMax,
-                                      );
+                                      _searchHeight = (_searchHeight - dy)
+                                          .clamp(_searchMin, _searchMax);
                                     }),
                                     onResizeEnd: () => context
                                         .read<SettingsController>()

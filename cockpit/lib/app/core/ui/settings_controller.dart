@@ -93,6 +93,9 @@ class SettingsController extends ChangeNotifier {
   void setEnableAgent(bool value) =>
       _apply(_settings.copyWith(enableAgent: value));
 
+  void setShowCockpit(bool value) =>
+      _apply(_settings.copyWith(showCockpit: value));
+
   /// Persiste a visibilidade dos painéis do shell (rail de projetos + árvore de
   /// arquivos) para restaurar no próximo boot. Não faz `notifyListeners` porque
   /// a fonte de verdade em runtime é a `CockpitViewModel` — aqui só grava.
