@@ -310,43 +310,94 @@ class _TerminalPaneState extends State<TerminalPane>
     // Antes o `!alt` delegava o alt-buffer pro xterm, e a disputa dos dois
     // scrollables fazia o scroll "morrer" quando claude entrava na UI full-screen.
     if (appOwnsScroll) {
-      final r = _render;
-      if (r == null) return;
-      final lineHeight = r.lineHeight;
-      if (lineHeight <= 0) return;
-      final lines = e.scrollDelta.dy / lineHeight;
-      if (lines == 0) return;
-      final int steps;
-      if (e.kind == PointerDeviceKind.mouse) {
-        // Wheel de mouse é entrada **discreta**: cada evento é um notch e deve
-        // rolar pelo menos 1 linha no sentido, sem acumular. Acumulando, um giro
-        // lento (delta < 1 linha, e espaçado no tempo) arredondava pra 0 e não
-        // pegava. Notches maiores (com aceleração) rolam proporcional.
-        final mag = lines.abs().round();
-        steps = (mag < 1 ? 1 : mag) * (lines.isNegative ? -1 : 1);
-      } else {
-        // Trackpad / scroll contínuo: deltas pequenos e frequentes — aí sim
-        // acumulamos a fração pra não rolar rápido demais. Reset por gesto (após
-        // pausa) evita arrastar o resíduo do gesto anterior; `round` (não
-        // `truncate`) faz o primeiro delta já valer sem exigir uma linha inteira.
-        final now = DateTime.now();
-        if (_lastWheelAt == null ||
-            now.difference(_lastWheelAt!) > _wheelGestureGap) {
-          _wheelLineAccum = 0;
-        }
-        _lastWheelAt = now;
-        _wheelLineAccum += lines;
-        steps = _wheelLineAccum.round();
-        if (steps == 0) return;
-        _wheelLineAccum -= steps;
+      // Wheel de mouse é entrada **discreta** (um notch por evento); trackpad é
+      // contínuo. A distinção decide se acumulamos a fração de linha (ver
+      // [_forwardWheel]).
+      _forwardWheel(
+        e.scrollDelta.dy,
+        e.position,
+        discrete: e.kind == PointerDeviceKind.mouse,
+      );
+    }
+  }
+
+  // --- Trackpad como pan/zoom (resiliência a sleep/wake no macOS) -------------
+  // No macOS o two-finger scroll normalmente chega como `PointerScrollEvent`
+  // sintetizado (tratado no [_onPointerSignal]). Mas **depois de dormir/acordar**
+  // o embedder às vezes passa a entregar o trackpad como eventos **pan/zoom** e
+  // para de sintetizar o scroll. O `Scrollable` (terminal fora do harness)
+  // consome pan/zoom nativamente e sobrevive; o nosso caminho `appOwnsScroll`
+  // (claude/vim), que só escutava `onPointerSignal`, ficava mudo até reiniciar.
+  // Tratando pan/zoom aqui, encaminhamos o wheel pro harness nos dois modos de
+  // entrega — o scroll interno do claude volta a funcionar sem restart.
+
+  /// Pan cumulativo do gesto pan/zoom em curso; usado pra derivar o delta por
+  /// update ([PointerPanZoomUpdateEvent.pan] é acumulado desde o start).
+  Offset _panZoomLast = Offset.zero;
+
+  void _onPointerPanZoomStart(PointerPanZoomStartEvent e) {
+    _panZoomLast = Offset.zero;
+    // Início de gesto novo: zera o resíduo fracionário de linha.
+    _wheelLineAccum = 0;
+    _lastWheelAt = null;
+  }
+
+  void _onPointerPanZoomUpdate(PointerPanZoomUpdateEvent e) {
+    final term = widget.terminal;
+    // Só encaminhamos quando a app dona o scroll; fora disso o `Scrollable`
+    // nativo já trata o pan/zoom (não duplicar).
+    if (!term.mouseMode.reportScroll) return;
+    final dy = e.pan.dy - _panZoomLast.dy;
+    _panZoomLast = e.pan;
+    if (_controller.selection != null) _controller.clearSelection();
+    // O pan tem sinal oposto ao scrollDelta (dedo pra cima = pan.dy negativo =
+    // ver conteúdo abaixo = scroll down); invertendo, reusamos a mesma convenção
+    // de sinal do [_forwardWheel]. Trackpad → contínuo (discrete: false).
+    _forwardWheel(-dy, e.position, discrete: false);
+  }
+
+  /// Encaminha `deltaY` (em px, convenção de `scrollDelta`) pro harness como
+  /// eventos de wheel. [discrete] = mouse (um notch mínimo por evento, sem
+  /// acumular); contínuo = trackpad (acumula a fração de linha).
+  void _forwardWheel(
+    double deltaY,
+    Offset globalPosition, {
+    required bool discrete,
+  }) {
+    final r = _render;
+    if (r == null) return;
+    final lineHeight = r.lineHeight;
+    if (lineHeight <= 0) return;
+    final lines = deltaY / lineHeight;
+    if (lines == 0) return;
+    final int steps;
+    if (discrete) {
+      // Giro lento (delta < 1 linha, espaçado) arredondaria pra 0 e não pegava;
+      // garantimos ao menos 1 linha no sentido. Notches maiores rolam proporcional.
+      final mag = lines.abs().round();
+      steps = (mag < 1 ? 1 : mag) * (lines.isNegative ? -1 : 1);
+    } else {
+      // Deltas pequenos e frequentes — acumulamos pra não rolar rápido demais.
+      // Reset por gesto (após pausa) evita arrastar o resíduo do gesto anterior;
+      // `round` (não `truncate`) faz o primeiro delta já valer sem exigir uma
+      // linha inteira.
+      final now = DateTime.now();
+      if (_lastWheelAt == null ||
+          now.difference(_lastWheelAt!) > _wheelGestureGap) {
+        _wheelLineAccum = 0;
       }
-      final cell = r.getCellOffset(r.globalToLocal(e.position));
-      final button = steps < 0
-          ? TerminalMouseButton.wheelUp
-          : TerminalMouseButton.wheelDown;
-      for (var i = 0; i < steps.abs(); i++) {
-        term.mouseInput(button, TerminalMouseButtonState.down, cell);
-      }
+      _lastWheelAt = now;
+      _wheelLineAccum += lines;
+      steps = _wheelLineAccum.round();
+      if (steps == 0) return;
+      _wheelLineAccum -= steps;
+    }
+    final cell = r.getCellOffset(r.globalToLocal(globalPosition));
+    final button = steps < 0
+        ? TerminalMouseButton.wheelUp
+        : TerminalMouseButton.wheelDown;
+    for (var i = 0; i < steps.abs(); i++) {
+      widget.terminal.mouseInput(button, TerminalMouseButtonState.down, cell);
     }
   }
 
@@ -477,6 +528,10 @@ class _TerminalPaneState extends State<TerminalPane>
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerCancel,
         onPointerSignal: _onPointerSignal,
+        // Trackpad entregue como pan/zoom (pós sleep/wake no macOS): encaminha o
+        // scroll pro harness igual ao onPointerSignal. Ver [_onPointerPanZoomUpdate].
+        onPointerPanZoomStart: _onPointerPanZoomStart,
+        onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
         // O cursor é decidido pelo MouseRegion acima (mãozinha sobre link com
         // Cmd, senão I-beam); o CockpitTerminal defere o dele pra cá.
         child: CockpitTerminal(
