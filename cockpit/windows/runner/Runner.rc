@@ -66,8 +66,11 @@ IDI_APP_ICON            ICON                    "resources\\app_icon.ico"
 #define VERSION_AS_NUMBER 1,0,0,0
 #endif
 
-#if defined(FLUTTER_VERSION)
-#define VERSION_AS_STRING FLUTTER_VERSION
+// A versão marketing (sem o `+build`), e NÃO o FLUTTER_VERSION cru: o `+21` do
+// pubspec faz o WinSparkle ler a versão instalada como pré-lançamento e
+// reoferecer o update em loop. Ver o porquê em CMakeLists.txt, que define isto.
+#if defined(FLUTTER_VERSION_MARKETING)
+#define VERSION_AS_STRING FLUTTER_VERSION_MARKETING
 #else
 #define VERSION_AS_STRING "1.0.0"
 #endif

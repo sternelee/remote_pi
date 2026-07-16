@@ -22,6 +22,24 @@ apply_standard_settings(${BINARY_NAME})
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
+
+# Versão "marketing": o FLUTTER_VERSION vem do pubspec COM o build number
+# (`1.8.4+21`), e é ele que o Runner.rc punha no VERSIONINFO. Isso quebra o
+# self-update: o WinSparkle compara a versão do appcast com esse string e
+# classifica o `+` como Type_String, ou seja, lê `1.8.4+21` como um
+# PRÉ-LANÇAMENTO de `1.8.4` (mesma regra que faz `1.5 > 1.5b3`). Resultado: o
+# appcast `1.8.4` parece mais novo que o app `1.8.4+21` pra sempre, e o updater
+# reoferece a mesma versão em loop.
+#
+# O appcast do Windows publica a versão marketing (ver cockpit-release.yml), então
+# o VERSIONINFO precisa publicar a mesma coisa. O build number não se perde: segue
+# no 4º campo do FILEVERSION numérico (`1,8,4,21`), que é o lugar convencional
+# dele no Windows.
+if(FLUTTER_VERSION)
+  string(REGEX REPLACE "\\+.*$" "" FLUTTER_VERSION_MARKETING "${FLUTTER_VERSION}")
+  target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MARKETING=\"${FLUTTER_VERSION_MARKETING}\"")
+endif()
+
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MAJOR=${FLUTTER_VERSION_MAJOR}")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_MINOR=${FLUTTER_VERSION_MINOR}")
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_PATCH=${FLUTTER_VERSION_PATCH}")
