@@ -57,9 +57,17 @@ void main() {
     );
     final wt = (added as Success<Worktree, WorktreeOpError>).value;
     expect(Directory(wt.path).existsSync(), isTrue);
-    expect(wt.path, endsWith('/.pi/remote/worktrees/feat/sso'));
+    expect(wt.path, endsWith('/.cockpit/worktrees/feat/sso'));
     expect(wt.branch, 'feat/sso');
     expect(wt.isDetached, isFalse);
+
+    // guard rail: `.cockpit/` foi adicionado ao `.gitignore` do repo, então o
+    // checkout aninhado não aparece como untracked no status do usuário.
+    final gitignore = File('${repo.path}/.gitignore');
+    expect(gitignore.existsSync(), isTrue);
+    expect(gitignore.readAsStringSync(), contains('.cockpit/'));
+    final status = await git(['status', '--porcelain', '--ignored']);
+    expect(status.stdout.toString(), isNot(contains('worktrees/feat/sso')));
 
     // list: exclui a raiz, inclui o novo fork.
     final list = await manager.list(repo.path);
