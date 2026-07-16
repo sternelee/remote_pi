@@ -8,23 +8,40 @@ import 'package:flutter/foundation.dart';
 /// Windows). Implementa [SelfUpdater] e ouve os eventos do motor via
 /// [UpdaterListener], traduzindo-os pra [SelfUpdateState].
 ///
-/// UX híbrida (decisão B do plano 47): a checagem de boot e a agendada rodam
-/// `inBackground: true` (silenciosas). Com `SUEnableAutomaticChecks`/
-/// `SUAutomaticallyUpdate` no Info.plist (macOS) o Sparkle baixa em background e
-/// instala no próximo quit; o card reflete [changes]. [applyDownloadedUpdate]
-/// re-checa em foreground pra o motor instalar+relançar o update já baixado.
+/// **Os dois motores têm contratos diferentes** e a fachada precisa saber com
+/// qual está falando — é o que [autoDownloads] diz:
 ///
-/// Limite conhecido (risco do plano): o plugin usa `SPUStandardUserDriver`, então
-/// o passo final de install pode mostrar UI nativa mínima — não dá pra suprimir
-/// 100% pela fachada. Aceitável; a checagem de boot continua silenciosa.
+/// - **macOS (Sparkle, `autoDownloads: true`)**: com `SUEnableAutomaticChecks`/
+///   `SUAutomaticallyUpdate` no Info.plist o motor baixa em background e instala
+///   no próximo quit. Fases: `checking → downloading → downloaded`.
+/// - **Windows (WinSparkle, `autoDownloads: false`)**: o motor **não baixa
+///   sozinho** e a `WinSparkle.dll` 0.8.1 **não tem callback de "baixou"** — o
+///   plugin só emite `checking-for-update`, `update-available`,
+///   `update-not-available`, `error` e `before-quit-for-update`. Logo
+///   [onUpdaterUpdateDownloaded] é código morto aqui e a fase para em
+///   [SelfUpdatePhase.available]; [applyUpdate] é que dispara download+install.
+///
+/// Tratar os dois como iguais foi o bug original: o Windows ficava preso em
+/// `downloading` pra sempre e o clique no card era no-op.
+///
+/// Limite conhecido (risco do plano): o passo final de install mostra UI nativa
+/// (`SPUStandardUserDriver` no macOS; o diálogo do WinSparkle no Windows) — não
+/// dá pra suprimir 100% pela fachada.
 class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
   AutoUpdaterSelfUpdater({
     required this.feedUrl,
+    required this.autoDownloads,
     this.checkInterval = const Duration(hours: 24),
   });
 
   /// Appcast da plataforma (`appcast-macos.xml` / `appcast-windows.xml`).
   final String feedUrl;
+
+  /// O motor baixa o artefato sozinho em background? `true` = Sparkle/macOS,
+  /// `false` = WinSparkle/Windows (ver doc da classe). Decide se
+  /// `update-available` vira [SelfUpdatePhase.downloading] ou
+  /// [SelfUpdatePhase.available].
+  final bool autoDownloads;
 
   /// Intervalo da checagem periódica do motor nativo (mín. 1h; 0 desliga).
   final Duration checkInterval;
@@ -53,8 +70,12 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
     if (_initialized) return;
     _initialized = true;
     autoUpdater.addListener(this);
-    await autoUpdater.setFeedURL(feedUrl);
+    // ORDEM IMPORTA no Windows: `setFeedURL` chama `win_sparkle_init()` por
+    // baixo, e o header da WinSparkle é explícito que as funções de config "can
+    // only be called *before* the first call to win_sparkle_init()". Por isso o
+    // intervalo vem primeiro. No macOS a ordem é indiferente.
     await autoUpdater.setScheduledCheckInterval(checkInterval.inSeconds);
+    await autoUpdater.setFeedURL(feedUrl);
   }
 
   @override
@@ -64,10 +85,15 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
   }
 
   @override
-  Future<void> applyDownloadedUpdate() async {
-    if (_state.phase != SelfUpdatePhase.downloaded) return;
-    // Re-checar em foreground faz o Sparkle/WinSparkle instalar o update já
-    // baixado e relançar o app (o motor conduz o restart).
+  Future<void> applyUpdate() async {
+    // `isActionable` (não `phase == downloaded`): no Windows a fase para em
+    // `available` e o guard antigo fazia este método retornar sempre — era esse
+    // o motivo de o clique no card não fazer nada.
+    if (!_state.isActionable) return;
+    // Foreground → macOS: o Sparkle instala o já baixado e relança. Windows:
+    // `win_sparkle_check_update_with_ui()`, que conduz download+install e,
+    // segundo o header, "ignores 'Skip this version' even if the user checked it
+    // previously" — então isto também destrava quem já clicou Skip no diálogo.
     await autoUpdater.checkForUpdates(inBackground: false);
   }
 
@@ -80,9 +106,15 @@ class AutoUpdaterSelfUpdater with UpdaterListener implements SelfUpdater {
 
   @override
   void onUpdaterUpdateAvailable(AppcastItem? item) {
-    // Disponível → o motor baixa em background (modo auto-update).
+    // macOS: o Sparkle já começou a baixar em background → `downloading`.
+    // Windows: o WinSparkle não baixa nada sozinho e nunca avisa que baixou →
+    // `available` é o estado terminal, e o clique no card (`applyUpdate`) é que
+    // conduz o download+install.
     _emit(
-      SelfUpdateState(SelfUpdatePhase.downloading, version: _versionOf(item)),
+      SelfUpdateState(
+        autoDownloads ? SelfUpdatePhase.downloading : SelfUpdatePhase.available,
+        version: _versionOf(item),
+      ),
     );
   }
 

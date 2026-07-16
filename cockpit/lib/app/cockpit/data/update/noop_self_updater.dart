@@ -22,7 +22,7 @@ class NoopSelfUpdater implements SelfUpdater {
   Future<void> checkForUpdates({bool inBackground = true}) async {}
 
   @override
-  Future<void> applyDownloadedUpdate() async {}
+  Future<void> applyUpdate() async {}
 
   @override
   void dispose() {}

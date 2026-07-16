@@ -211,8 +211,12 @@ UpdateTarget _updateTarget(String version) {
 /// Constrói o [SelfUpdater] da plataforma: [AutoUpdaterSelfUpdater] quando há
 /// appcast (macOS/Windows), [NoopSelfUpdater] no Linux (sem self-update nativo →
 /// o `UpdateViewModel` usa o caminho de notify + download manual).
+///
+/// `autoDownloads` distingue os dois motores: só o Sparkle (macOS) baixa o
+/// artefato em background por conta própria. O WinSparkle exige o clique do
+/// usuário pra baixar+instalar — ver doc do [AutoUpdaterSelfUpdater].
 SelfUpdater _buildSelfUpdater(UpdateTarget target) {
   final feed = target.selfUpdateFeedUrl;
   if (feed == null) return const NoopSelfUpdater();
-  return AutoUpdaterSelfUpdater(feedUrl: feed);
+  return AutoUpdaterSelfUpdater(feedUrl: feed, autoDownloads: Platform.isMacOS);
 }

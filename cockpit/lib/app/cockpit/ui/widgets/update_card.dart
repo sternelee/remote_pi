@@ -7,8 +7,10 @@ import 'package:shadcn_flutter/shadcn_flutter.dart';
 /// Mini update card at the bottom of the rail — above the machine name. Only
 /// renders when the [UpdateViewModel] has a pending update.
 ///
-/// - **macOS/Windows (self-update):** shows download progress, then "restart to
+/// - **macOS (self-update):** shows download progress, then "restart to
 ///   install"; tapping installs the downloaded update and relaunches.
+/// - **Windows (self-update):** WinSparkle doesn't pre-download, so it goes
+///   straight to "click to install"; tapping drives download+install natively.
 /// - **Linux (notify):** "click to download"; tapping opens the artifact URL.
 ///
 /// The X dismisses it (persisted per version on Linux; session-only on

@@ -59,8 +59,10 @@ class _CockpitPageState extends State<CockpitPage> {
     // Pontes do menu nativo (PlatformMenuBar vive acima da rota, sem acesso aos
     // ViewModels page-scoped): abrir projeto e verificar atualizações.
     requestOpenProject = () => unawaited(_addProject());
+    // `checkNow()` (não `check()`): o menu é uma checagem pedida pelo usuário →
+    // foreground, com resposta visível e ignorando "Skip this version".
     requestCheckForUpdates = () =>
-        unawaited(context.read<UpdateViewModel>().check());
+        unawaited(context.read<UpdateViewModel>().checkNow());
     requestOpenSettings = () {
       if (!mounted) return;
       context.pushNamed(RoutePaths.settings);

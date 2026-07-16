@@ -9,11 +9,14 @@ void main() {
   // plataforma via EventChannel) — o binding de teste trata isso sem crashar.
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('AutoUpdaterSelfUpdater traduz eventos nativos → SelfUpdateState', () {
+  group('Sparkle/macOS (autoDownloads: true) — baixa em background', () {
     late AutoUpdaterSelfUpdater updater;
 
     setUp(() {
-      updater = AutoUpdaterSelfUpdater(feedUrl: 'https://example.test/appcast.xml');
+      updater = AutoUpdaterSelfUpdater(
+        feedUrl: 'https://example.test/appcast.xml',
+        autoDownloads: true,
+      );
     });
     tearDown(() => updater.dispose());
 
@@ -34,6 +37,8 @@ void main() {
       expect(updater.state.version, '1.6.0');
       expect(updater.state.hasPendingUpdate, isTrue);
       expect(updater.state.isReadyToInstall, isFalse);
+      // Ainda baixando → o clique não deve fazer nada.
+      expect(updater.state.isActionable, isFalse);
     });
 
     test('update-downloaded → pronto pra instalar', () {
@@ -42,6 +47,7 @@ void main() {
       );
       expect(updater.state.phase, SelfUpdatePhase.downloaded);
       expect(updater.state.isReadyToInstall, isTrue);
+      expect(updater.state.isActionable, isTrue);
       expect(updater.state.version, '1.6.0');
     });
 
@@ -84,6 +90,48 @@ void main() {
     });
   });
 
+  // Regressão do bug do Windows: o WinSparkle não baixa sozinho e nunca emite
+  // "update-downloaded", então tratar os dois motores igual prendia a fase em
+  // `downloading` pra sempre e fazia o clique no card ser no-op.
+  group('WinSparkle/Windows (autoDownloads: false) — para em available', () {
+    late AutoUpdaterSelfUpdater updater;
+
+    setUp(() {
+      updater = AutoUpdaterSelfUpdater(
+        feedUrl: 'https://example.test/appcast-windows.xml',
+        autoDownloads: false,
+      );
+    });
+    tearDown(() => updater.dispose());
+
+    test('update-available → available (NÃO downloading) e já acionável', () {
+      updater.onUpdaterUpdateAvailable(
+        const AppcastItem(displayVersionString: '1.8.4'),
+      );
+      expect(updater.state.phase, SelfUpdatePhase.available);
+      expect(updater.state.hasPendingUpdate, isTrue);
+      // O que destrava o clique no card — era isto que faltava.
+      expect(updater.state.isActionable, isTrue);
+      // Continua não sendo "restart to install": nada foi baixado ainda.
+      expect(updater.state.isReadyToInstall, isFalse);
+    });
+
+    test('tolera AppcastItem null (o plugin Windows não repassa o item)', () {
+      updater.onUpdaterUpdateAvailable(null);
+      expect(updater.state.phase, SelfUpdatePhase.available);
+      expect(updater.state.version, isNull);
+      expect(updater.state.isActionable, isTrue);
+    });
+
+    test('update-not-available → idle', () {
+      updater.onUpdaterUpdateAvailable(null);
+      updater.onUpdaterUpdateNotAvailable(null);
+      expect(updater.state.phase, SelfUpdatePhase.idle);
+      expect(updater.state.hasPendingUpdate, isFalse);
+      expect(updater.state.isActionable, isFalse);
+    });
+  });
+
   group('NoopSelfUpdater (Linux)', () {
     test('não suportado e inerte', () async {
       const updater = NoopSelfUpdater();
@@ -92,8 +140,9 @@ void main() {
       // Métodos são no-op e não lançam.
       await updater.initialize();
       await updater.checkForUpdates();
-      await updater.applyDownloadedUpdate();
+      await updater.applyUpdate();
       expect(updater.state.isReadyToInstall, isFalse);
+      expect(updater.state.isActionable, isFalse);
     });
   });
 }
