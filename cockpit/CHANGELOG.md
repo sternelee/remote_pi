@@ -14,6 +14,28 @@ As versões seguem o `version:` do `pubspec.yaml` (SSOT). O campo `notes` do
   meio da frase).
 -->
 
+## [1.9.0] — 2026-07-17
+
+Atalhos de teclado pra navegar o workspace, além de vários acertos no terminal,
+nas Tasks e no visualizador de arquivos.
+
+### Added
+- **Selecionar aba por teclado:** ⌘1…⌘8 vão pra aba N da pane focada e ⌘9 pula
+  pra última (View → Select Tab).
+- **Navegar entre panes:** ⌘⌥ + setas move o foco pra pane vizinha na direção
+  (View → Focus Pane).
+
+### Changed
+- **Visualizador de arquivos:** os botões Format/Discard/Save saíram da barra
+  inferior — as ações seguem no menu File (e nos atalhos ⌘S / ⇧⌘F).
+- **Worktrees** passam a morar em `.cockpit/worktrees` (antes `.pi/`), com
+  `.cockpit/worktrees/` garantido no `.gitignore` do repo.
+
+### Fixed
+- **Spinner preso ao interromper o agente:** apertar ESC pra parar o harness
+  agora apaga o indicador de "trabalhando" na hora.
+- **Tasks:** o debug tab escreve "finished" ao encerrar, sinalizando o fim.
+
 ## [1.8.5] — 2026-07-16
 
 Correções de Windows: o updater não reoferece mais a mesma versão, e o
