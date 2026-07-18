@@ -24,6 +24,7 @@ import 'package:cockpit/app/settings/ui/notifications_viewmodel.dart';
 import 'package:cockpit/app/settings/ui/pairing_dialog.dart';
 import 'package:cockpit/app/settings/ui/revoke_dialog.dart';
 import 'package:cockpit/app/settings/ui/settings_env_gate.dart';
+import 'package:cockpit/app/settings/ui/shortcut_catalog.dart';
 import 'package:cockpit/app/core/ui/menu/workspace_menu_bridge.dart';
 import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
@@ -48,6 +49,7 @@ enum _Category {
   appearance,
   terminal,
   languages,
+  shortcuts,
   notifications,
   connectivity,
   daemons,
@@ -102,6 +104,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     _Category.appearance => const _AppearancePanel(),
                     _Category.terminal => const _TerminalPanel(),
                     _Category.languages => const _LanguagesPanel(),
+                    _Category.shortcuts => const _ShortcutsPanel(),
                     _Category.notifications => const _NotificationsPanel(),
                     _Category.connectivity => const _ConnectivityPanel(),
                     _Category.daemons => const _DaemonsPanel(),
@@ -201,6 +204,12 @@ class _CategoryNav extends StatelessWidget {
             label: 'Language',
             selected: selected == _Category.languages,
             onTap: () => onSelect(_Category.languages),
+          ),
+          _NavItem(
+            icon: Icons.keyboard_outlined,
+            label: 'Shortcuts',
+            selected: selected == _Category.shortcuts,
+            onTap: () => onSelect(_Category.shortcuts),
           ),
           _NavItem(
             icon: Icons.notifications_outlined,
@@ -1057,6 +1066,92 @@ class _SyntaxPreview extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Blocos reutilizáveis
 // ---------------------------------------------------------------------------
+// Shortcuts (read-only)
+// ---------------------------------------------------------------------------
+
+/// Aba **Shortcuts**: lista os atalhos de teclado do app, agrupados por área,
+/// só pra consulta — customização fica pra uma fase futura (exigiria um
+/// registry central que as camadas de handlers consultem). Fonte:
+/// [buildShortcutCatalog], que resolve ⌘/Ctrl pela plataforma.
+class _ShortcutsPanel extends StatelessWidget {
+  const _ShortcutsPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final sections = buildShortcutCatalog();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 40),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 680),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 20),
+                child: Text(
+                  'Keyboard shortcuts are not customizable yet.',
+                  style: context.typo.label.copyWith(color: colors.text3),
+                ),
+              ),
+              for (final section in sections)
+                _Section(
+                  label: section.title,
+                  child: _Card(
+                    children: [
+                      for (final shortcut in section.items)
+                        _Row(
+                          title: shortcut.label,
+                          description: shortcut.note,
+                          trailing: _ShortcutKeys(keys: shortcut.keys),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Fileira de "keycaps": um chip por tecla do atalho.
+class _ShortcutKeys extends StatelessWidget {
+  const _ShortcutKeys({required this.keys});
+  final List<String> keys;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < keys.length; i++) ...[
+          if (i > 0) const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: colors.panel3,
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: colors.border),
+            ),
+            child: Text(
+              keys[i],
+              style: context.typo.mono.copyWith(
+                fontSize: 12,
+                color: colors.text2,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _Section extends StatelessWidget {
   const _Section({required this.label, required this.child, this.trailing});
   final String label;
