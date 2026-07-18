@@ -11,7 +11,9 @@ import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
+import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Root git de um workspace **multi-root** (multirepo) — alimenta o cabeçalho
@@ -1309,6 +1311,10 @@ class _RowState extends State<_Row> {
   void _showMenu(BuildContext context, Offset globalPosition) {
     final isFolder = widget.isFolder;
     final isFile = !isFolder;
+    // "Create agent" só quando agentes estão ligados (Settings → General →
+    // "Enable agents"). "Create terminal" segue sempre. Lido na hora do menu
+    // pra refletir o toggle atual.
+    final agentsEnabled = context.read<SettingsController>().settings.enableAgent;
     showAppMenu<String>(
       context,
       minWidth: 220,
@@ -1333,23 +1339,24 @@ class _RowState extends State<_Row> {
             enabled: widget.gitStatus != null,
           ),
         ],
-        if (isFolder) ...const [
-          AppMenuItem(
+        if (isFolder) ...[
+          const AppMenuItem(
             value: 'newfile',
             label: 'New file',
             icon: Icons.note_add_outlined,
           ),
-          AppMenuItem(
+          const AppMenuItem(
             value: 'newfolder',
             label: 'New folder',
             icon: Icons.create_new_folder_outlined,
           ),
-          AppMenuItem(
-            value: 'agent',
-            label: 'Create agent',
-            icon: Icons.auto_awesome,
-          ),
-          AppMenuItem(
+          if (agentsEnabled)
+            const AppMenuItem(
+              value: 'agent',
+              label: 'Create agent',
+              icon: Icons.auto_awesome,
+            ),
+          const AppMenuItem(
             value: 'terminal',
             label: 'Create terminal',
             icon: Icons.terminal_outlined,
