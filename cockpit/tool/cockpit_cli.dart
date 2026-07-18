@@ -22,6 +22,7 @@
 //                                                 lê o output de uma task
 //   cockpit list-tabs       [--json]              tabs ativas (alias: list-panes)
 //   cockpit list-workspaces [--json]              workspaces (projetos) abertos
+//   cockpit list-tasks      [--json]              tasks do workspace da tab
 //   cockpit install-skill   [--force]             instala a skill do Claude Code
 //   cockpit --help | --version
 //
@@ -34,7 +35,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-const String _version = '0.3.0';
+const String _version = '0.4.0';
 
 /// Id da própria tab: `COCKPIT_TAB_ID` (novo) com fallback pro legado
 /// `COCKPIT_PANE_ID`. O app injeta os dois; o fallback cobre binário novo com
@@ -75,6 +76,8 @@ Future<void> main(List<String> argv) async {
       await _cmdList('list-panes', args);
     case 'list-workspaces':
       await _cmdList('list-workspaces', args);
+    case 'list-tasks':
+      await _cmdList('list-tasks', args);
     case 'read-tab':
     case 'read-pane': // alias legado
       await _cmdRead('read-pane', args);
@@ -158,7 +161,12 @@ String _resolvePath(String path) {
 
 Future<void> _cmdList(String cmd, List<String> args) async {
   final parsed = _Flags.parse(args);
-  final resp = await _request(<String, dynamic>{'cmd': cmd});
+  final req = <String, dynamic>{'cmd': cmd};
+  // `list-tasks` lista as tasks do workspace da tab emissora (ou da `--tab-id`
+  // passada); os outros list-* ignoram o campo — mandar sempre é inofensivo.
+  final tabId = parsed.tabId ?? _selfTabId();
+  if (tabId != null && tabId.isNotEmpty) req['tabId'] = tabId;
+  final resp = await _request(req);
   if (resp['ok'] != true) {
     stderr.writeln('cockpit: ${resp['error'] ?? 'failed'}');
     exit(1);
@@ -182,19 +190,38 @@ Future<void> _cmdList(String cmd, List<String> args) async {
       final name = (label is String && label.isNotEmpty)
           ? '⚲ $label'
           : (e['title'] ?? '').toString();
+      // Workspace: basename do path (legível) — o `workspaceId` virou UUID
+      // opaco. `workspacePath` ausente = app antigo → mostra o id mesmo.
+      final wsPath = e['workspacePath']?.toString();
+      final ws = (wsPath != null && wsPath.isNotEmpty)
+          ? _basename(wsPath)
+          : (e['workspaceId'] ?? '').toString();
       stdout.writeln(
         '$flag ${_pad(e['id']?.toString(), 6)} '
         '${_pad(e['kind']?.toString(), 9)} '
-        '${_pad(e['workspaceId']?.toString(), 8)} $name',
+        '${_pad(ws, 14)} $name',
+      );
+    }
+  } else if (cmd == 'list-tasks') {
+    for (final e in data.cast<Map>()) {
+      final flag = e['running'] == true ? '●' : ' ';
+      // `[output]` = já rodou neste boot → `read-task <id>` tem o que ler.
+      final out = e['hasOutput'] == true ? '  [output]' : '';
+      stdout.writeln(
+        '$flag ${_pad(e['id']?.toString(), 16)} '
+        '${_pad(e['source']?.toString(), 9)} '
+        '${e['label'] ?? ''}$out',
       );
     }
   } else {
     for (final e in data.cast<Map>()) {
       // `tabs` é o campo novo; `panes` fica como fallback (app antigo).
       final n = e['tabs'] ?? e['panes'] ?? 0;
+      // Nome + path (o `id` virou UUID opaco e não é endereçável pela CLI —
+      // no JSON ele continua íntegro pra quem precisar).
       stdout.writeln(
-        '${_pad(e['id']?.toString(), 10)} '
-        '${_pad('$n tabs', 10)} ${e['name'] ?? ''}',
+        '${_pad(e['name']?.toString(), 18)} '
+        '${_pad('$n tabs', 9)} ${e['path'] ?? ''}',
       );
     }
   }
@@ -504,6 +531,7 @@ USAGE:
   cockpit read-task <task-id>                  read a task's output (even w/o tab)
   cockpit list-tabs       [--json]             list active tabs (alias: list-panes)
   cockpit list-workspaces [--json]             list workspaces (projects)
+  cockpit list-tasks      [--json]             list this workspace's tasks (Task Run)
   cockpit install-skill   [--force]            install the Claude Code skill
   cockpit --help | --version
 
@@ -514,6 +542,17 @@ READ (read-tab / read-task):
   Output is always chronological (top→bottom); flags only pick the window.
   read-tab without a target reads the CURRENT tab; a target may be a stable
   tab label or a tab-id.
+
+TASKS (list-tasks / read-task):
+  Task ids are stable per workspace: npm:<script> (package.json), flutter:run /
+  flutter:test, json:<label> (.cockpit/tasks.json). Discover them with
+  `cockpit list-tasks` — `[output]` marks tasks whose output `read-task` can
+  read (ran this boot); ● marks tasks running right now. Task-output tabs in
+  `list-tabs --json` also carry the task id as `taskId`.
+
+IDS:
+  Workspace ids are opaque UUIDs — use `workspacePath` (list-tabs) / `path`
+  (list-workspaces) when you need the folder on disk.
 
 TARGET:
   --tab-id <id>   target tab. Default = $COCKPIT_TAB_ID (the current tab;
@@ -533,7 +572,8 @@ EXAMPLES:
   cockpit open ~/.gitconfig
   cockpit read-tab Extension --lines 50        # last 50 lines of tab "Extension"
   cockpit read-tab t4 --lines 200 --from-start
-  cockpit read-task test --lines 80            # tail of task "test" output''',
+  cockpit list-tasks                           # discover task ids (npm:dev, ...)
+  cockpit read-task npm:dev --lines 80         # tail of task "npm:dev" output''',
   );
 }
 
@@ -542,11 +582,19 @@ String _pad(String? s, int n) {
   return v.length >= n ? v : v + ' ' * (n - v.length);
 }
 
+String _basename(String path) {
+  final parts = path
+      .split(Platform.isWindows ? RegExp(r'[\\/]') : '/')
+      .where((p) => p.isNotEmpty)
+      .toList();
+  return parts.isEmpty ? path : parts.last;
+}
+
 // ---- conteúdo da skill (versiona junto com o binário) -----------------------
 
 const String _skillMarkdown = r'''---
 name: cockpit-cli
-description: Drive Cockpit's multiplexed terminals from inside a tab. Use when you (an agent running in a Cockpit terminal) need to type text or press keys into your own or another tab, read another tab's or a task's output, or list the open tabs/workspaces. Triggers on tmux-like control needs: send-keys, run a command in another tab, read a tab's scrollback, inspect a task run's output, discover tab ids.
+description: Drive Cockpit's multiplexed terminals from inside a tab. Use when you (an agent running in a Cockpit terminal) need to type text or press keys into your own or another tab, read another tab's or a task's output, or list the open tabs/workspaces/tasks. Triggers on tmux-like control needs: send-keys, run a command in another tab, read a tab's scrollback, inspect a task run's output, discover tab or task ids.
 ---
 
 # cockpit — Cockpit's internal CLI
@@ -584,13 +632,21 @@ Cockpit tabs (it is not on the global PATH).
   pick the window.
 - `cockpit read-task <task-id> [--lines N] [--offset N] [--from-start]` — same
   windowed read, but for a **task run's** output (the Task Run feature). Works
-  even if no task-output tab is open. The task id is the task's `key`/id (e.g.
-  from `.cockpit/tasks.json` or the task list in the UI).
+  even if no task-output tab is open, but only for tasks that ran this boot.
+  Discover ids with `cockpit list-tasks` (never guess them).
+- `cockpit list-tasks [--json]` — tasks of **your workspace** (the one owning
+  the current tab, or `--tab-id`'s): `id`, `label`, `kind` (watch|oneShot),
+  `source` (detected|manual), `running`, `hasOutput` (`read-task` has output
+  to read). Ids are stable per workspace: `npm:<script>` (package.json
+  scripts), `flutter:run`/`flutter:test`, `json:<label>`
+  (`.cockpit/tasks.json`).
 - `cockpit list-tabs [--json]` (alias: `list-panes`) — active tabs: `id`,
-  `kind`, `title` (dynamic), `label` (manual stable name, or null),
-  `workspaceId`, `working`. Resolve a tab by its stable `label`, not the
-  dynamic `title`.
-- `cockpit list-workspaces [--json]` — open projects: `id`, `name`, `tabs`.
+  `kind` (terminal|agent|file|task), `title` (dynamic), `label` (manual stable
+  name, or null), `workspaceId` (opaque UUID), `workspacePath` (workspace root
+  on disk), `working`, and `taskId` on task-output tabs (the id `read-task`
+  accepts). Resolve a tab by its stable `label`, not the dynamic `title`.
+- `cockpit list-workspaces [--json]` — open projects: `id` (opaque UUID),
+  `name`, `path` (root on disk), `tabs`.
 
 ## Target (--tab-id)
 
@@ -631,7 +687,13 @@ Read what another tab printed (e.g. check on a worker, debug a failure):
 cockpit read-tab t4 --lines 50            # last 50 lines of t4
 cockpit read-tab Extension                # by stable label (last 100 lines)
 cockpit read-tab t4 --lines 100 --offset 100   # the 100 lines before those
-cockpit read-task test --lines 80         # tail of task "test" output
+```
+
+Read a task run's output (dev server, build, test — the Task Run feature):
+
+```sh
+cockpit list-tasks                        # ids: ● = running, [output] = readable
+cockpit read-task npm:dev --lines 80      # tail of the "npm:dev" task output
 ```
 
 Typical loop — dispatch work to a tab, wait, then read the result:
@@ -649,6 +711,6 @@ cockpit read-tab t4 --lines 60
 - "tab ... is not a terminal" → the target is an agent/file tab, not a shell.
 - "has no readable output" → read-tab target is an agent/file tab; only
   terminal and task-output tabs are readable.
-- "no output recorded for task ..." → the task never ran this app boot (or the
-  id is wrong).
+- "no output recorded for task ..." → the task never ran this app boot, or the
+  id is wrong — check both with `cockpit list-tasks` (`[output]` = readable).
 ''';

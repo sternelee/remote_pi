@@ -55,6 +55,8 @@ import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/diff_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/task_discovery.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/task_runner_gateway.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_output_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_scrollback_store.dart';
@@ -98,10 +100,17 @@ class CockpitViewModel extends ChangeNotifier {
     this._gitRunner,
     this._gitDiff,
     this._realmRepo,
+    this._taskDiscovery,
+    this._taskRunner,
   );
 
   final ProjectRepository _projects;
   final RealmRepository _realmRepo;
+
+  /// Descoberta e estado de tasks — usados só pelo comando `list-tasks` da CLI
+  /// interna (mesmos binds do painel Tasks → mesma lista que a UI mostra).
+  final TaskDiscovery _taskDiscovery;
+  final TaskRunnerGateway _taskRunner;
   final RpcGatewayFactory _factory;
   final FolderLister _folders;
   final SessionHistory _history;
@@ -2669,6 +2678,9 @@ class CockpitViewModel extends ChangeNotifier {
                 // desde a migração dos realms — quem precisa do caminho (ex.:
                 // scripts que casavam por sufixo) usa este campo.
                 'workspacePath': _projectById(s.projectId)?.path,
+                // Aba de task output → id da task espelhada (`npm:dev`…), o
+                // mesmo aceito por `read-task`. Ausente nas demais tabs.
+                if (s is TaskOutputSession) 'taskId': s.taskId,
                 'working': s.isWorking,
               },
             )
@@ -2714,6 +2726,9 @@ class CockpitViewModel extends ChangeNotifier {
               (p) => <String, dynamic>{
                 'id': p.id,
                 'name': p.name,
+                // Raiz no disco (mesma razão do `workspacePath` do list-panes:
+                // o `id` virou UUID opaco; antes o path ERA o id).
+                'path': p.path,
                 // Nº de tabs (sessões) abertas nesse workspace. Campo era 'panes'
                 // (enganoso — sempre foi contagem de tabs, não de folhas-pane).
                 'tabs': _sessions.values
@@ -2762,6 +2777,37 @@ class CockpitViewModel extends ChangeNotifier {
           );
         }
         return CockpitCommandResult.ok(readTerminalWindow(term, c.args));
+
+      // `cockpit list-tasks` — tasks do workspace do pane emissor (tabId,
+      // default da CLI = a própria tab; fallback: workspace selecionado).
+      // Mesmos binds do painel Tasks → mesma lista que a UI. `id` é o aceito
+      // por `read-task`; `hasOutput` diz se o read vai responder.
+      case 'list-tasks':
+        final sender = c.tabId == null ? null : _sessions[c.tabId];
+        final project = sender != null
+            ? _projectById(sender.projectId)
+            : selectedProject;
+        if (project == null ||
+            project.isSystemTerminal ||
+            project.path.isEmpty) {
+          return const CockpitCommandResult.fail(
+            'no workspace to list tasks for',
+          );
+        }
+        final defs = await _taskDiscovery.discover(project.path);
+        final tasks = defs
+            .map(
+              (d) => <String, dynamic>{
+                'id': d.id,
+                'label': d.label,
+                'kind': d.kind.name,
+                'source': d.source.name,
+                'running': _taskRunner.runOf(d.id).isActive,
+                'hasOutput': _taskTerminals.existingTerminal(d.id) != null,
+              },
+            )
+            .toList();
+        return CockpitCommandResult.ok(tasks);
 
       // `cockpit read-task <task-id>` — mesma leitura, mas do terminal da task
       // no `TaskTerminalStore` (funciona mesmo sem aba `task_output` aberta).
