@@ -6,6 +6,7 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/app_menu.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Subpane de Tasks na coluna direita (abaixo da árvore de arquivos). Lista as
@@ -253,9 +254,8 @@ class _TaskRow extends StatelessWidget {
           Expanded(
             // Só abre a aba de output quando a task está viva (tem buffer);
             // parada → não clicável.
-            child: Tooltip(
-              tooltip: (context) =>
-                  TooltipContainer(child: Text(commandPreview)),
+            child: AppTooltip(
+              message: commandPreview,
               child: HoverTap(
                 onTap: active ? onTap : null,
                 child: Opacity(
@@ -365,8 +365,8 @@ class _IconAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,
@@ -426,9 +426,8 @@ class _ProfileChip extends StatelessWidget {
       ),
     );
     if (!canCycle) return Padding(padding: const EdgeInsets.only(right: 2), child: chip);
-    return Tooltip(
-      tooltip: (context) =>
-          const TooltipContainer(child: Text('Switch profile')),
+    return AppTooltip(
+      message: 'Switch profile',
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,

@@ -6,6 +6,7 @@ import 'package:cockpit/app/cockpit/domain/entities/git_info.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/confirm_dialog.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/core/ui/widgets/app_menu.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
@@ -1835,8 +1836,9 @@ class _HeaderIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    // AppTooltip (não o Tooltip do shadcn): posiciona certo sob o zoom do app.
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         color: selected ? colors.panel2 : Colors.transparent,
         borderRadius: BorderRadius.circular(5),

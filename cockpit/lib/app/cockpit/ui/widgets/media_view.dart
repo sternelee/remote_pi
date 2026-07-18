@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Áudio ou vídeo — define se há superfície de vídeo.
@@ -190,9 +191,8 @@ class _MediaViewState extends State<MediaView> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
-          Tooltip(
-            tooltip: (context) =>
-                TooltipContainer(child: Text(_playing ? 'Pause' : 'Play')),
+          AppTooltip(
+            message: _playing ? 'Pause' : 'Play',
             child: IconButton.ghost(
               icon: Icon(
                 _playing ? Icons.pause : Icons.play_arrow,
@@ -223,9 +223,8 @@ class _MediaViewState extends State<MediaView> {
             style: context.typo.mono.copyWith(fontSize: 11.5, color: fg2),
           ),
           const SizedBox(width: 4),
-          Tooltip(
-            tooltip: (context) =>
-                TooltipContainer(child: Text(_volume <= 0 ? 'Unmute' : 'Mute')),
+          AppTooltip(
+            message: _volume <= 0 ? 'Unmute' : 'Mute',
             child: IconButton.ghost(
               icon: Icon(
                 _volume <= 0 ? Icons.volume_off : Icons.volume_up,

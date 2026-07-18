@@ -8,6 +8,7 @@ import 'package:cockpit/app/cockpit/ui/widgets/workspace_avatar.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Root git de um workspace, pro kebab da rail: path absoluto + basename +
@@ -34,6 +35,7 @@ class ProjectsRail extends StatefulWidget {
     required this.onCreateWorktree,
     required this.onRemoveWorktree,
     required this.onMergeWorktree,
+    required this.onUpdateWorktree,
     required this.onSync,
     required this.onPull,
     required this.onPush,
@@ -91,6 +93,9 @@ class ProjectsRail extends StatefulWidget {
   /// Mergeia a branch do worktree (fork) no workspace pai.
   final ValueChanged<Project> onMergeWorktree;
 
+  /// "Update from Parent": mergeia a branch do pai no worktree (fork).
+  final ValueChanged<Project> onUpdateWorktree;
+
   /// Ações git no workspace, direcionadas a [rootPath] (multi-root: escolhida
   /// no submenu do kebab; single-root: a própria raiz, sem perguntar).
   final void Function(Project project, String rootPath) onSync;
@@ -132,6 +137,7 @@ class _ProjectsRailState extends State<ProjectsRail> {
           onTap: () => widget.onSelect(forks[i].id),
           onRemove: () => widget.onRemoveWorktree(forks[i]),
           onMerge: () => widget.onMergeWorktree(forks[i]),
+          onUpdate: () => widget.onUpdateWorktree(forks[i]),
         ),
     ];
   }
@@ -468,6 +474,7 @@ class _WorktreeItem extends StatelessWidget {
     required this.onTap,
     required this.onRemove,
     required this.onMerge,
+    required this.onUpdate,
   });
 
   final Project worktree;
@@ -485,6 +492,7 @@ class _WorktreeItem extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onRemove;
   final VoidCallback onMerge;
+  final VoidCallback onUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -550,6 +558,7 @@ class _WorktreeItem extends StatelessWidget {
                       branch: worktree.name,
                       onRemove: onRemove,
                       onMerge: onMerge,
+                      onUpdate: onUpdate,
                     ),
                   ],
                 ),
@@ -568,11 +577,13 @@ class _ForkMenuButton extends StatelessWidget {
     required this.branch,
     required this.onRemove,
     required this.onMerge,
+    required this.onUpdate,
   });
 
   final String branch;
   final VoidCallback onRemove;
   final VoidCallback onMerge;
+  final VoidCallback onUpdate;
 
   Future<void> _show(BuildContext context) async {
     final pick = await showAppMenu<String>(
@@ -582,6 +593,13 @@ class _ForkMenuButton extends StatelessWidget {
           value: 'merge',
           label: 'Merge to Parent',
           icon: Icons.merge_type,
+        ),
+        // Inverso do Merge to Parent: traz a branch do pai pro worktree
+        // ("Update branch" do GitHub). Conflito fica no worktree.
+        AppMenuItem(
+          value: 'update',
+          label: 'Update from Parent',
+          icon: Icons.download_outlined,
         ),
         AppMenuItem(
           value: 'copy',
@@ -597,6 +615,7 @@ class _ForkMenuButton extends StatelessWidget {
       ],
     );
     if (pick == 'merge') onMerge();
+    if (pick == 'update') onUpdate();
     if (pick == 'copy') {
       await Clipboard.setData(ClipboardData(text: branch));
     }
@@ -605,18 +624,15 @@ class _ForkMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      tooltip: (context) => const TooltipContainer(child: Text('Options')),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (_) => _show(context),
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: Icon(Icons.more_vert, size: 14, color: context.colors.text3),
-          ),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (_) => _show(context),
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: Icon(Icons.more_vert, size: 14, color: context.colors.text3),
         ),
       ),
     );
@@ -952,18 +968,15 @@ class _MenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      tooltip: (context) => const TooltipContainer(child: Text('Options')),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (_) => _show(context),
-          child: SizedBox(
-            width: 26,
-            height: 26,
-            child: Icon(Icons.more_vert, size: 16, color: context.colors.text3),
-          ),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (_) => _show(context),
+        child: SizedBox(
+          width: 26,
+          height: 26,
+          child: Icon(Icons.more_vert, size: 16, color: context.colors.text3),
         ),
       ),
     );
@@ -1003,8 +1016,8 @@ class _SmallIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,

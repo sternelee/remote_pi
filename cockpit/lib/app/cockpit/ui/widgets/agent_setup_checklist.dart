@@ -4,6 +4,7 @@ import 'package:cockpit/app/core/domain/entities/setup_check.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Checklist do ambiente de **agente** (pi + extensão remote-pi + supervisor),
@@ -254,9 +255,8 @@ class _StepCard extends StatelessWidget {
             const SizedBox(width: 4),
           ],
           if (status != CheckStatus.notApplicable)
-            Tooltip(
-              tooltip: (context) =>
-                  const TooltipContainer(child: Text('Check again')),
+            AppTooltip(
+              message: 'Check again',
               child: HoverTap(
                 borderRadius: BorderRadius.circular(6),
                 onTap: () => onRecheck(),
@@ -297,9 +297,8 @@ class _StatusDot extends StatelessWidget {
           color: colors.error.withValues(alpha: 0.85),
         );
       case CheckStatus.notApplicable:
-        return Tooltip(
-          tooltip: (context) =>
-              const TooltipContainer(child: Text('Not required in this setup')),
+        return AppTooltip(
+          message: 'Not required in this setup',
           child: Icon(
             Icons.remove_circle_outline,
             size: 20,

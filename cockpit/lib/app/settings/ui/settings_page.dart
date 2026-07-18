@@ -30,6 +30,7 @@ import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Tela cheia de Configurações (push). Categorias à esquerda (Aparência ·
@@ -127,8 +128,8 @@ class _SettingsHeader extends StatelessWidget {
       children: [
         const WindowControls(),
         const SizedBox(width: 14),
-        Tooltip(
-          tooltip: (context) => const TooltipContainer(child: Text('Back')),
+        AppTooltip(
+          message: 'Back',
           child: HoverTap(
             borderRadius: BorderRadius.circular(6),
             onTap: () => context.pop(),
@@ -1675,8 +1676,8 @@ class _StatusDot extends StatelessWidget {
       false => (colors.text4, 'Server not found or command invalid'),
       null => (colors.border, 'Checking…'),
     };
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tip)),
+    return AppTooltip(
+      message: tip,
       child: Container(
         width: 9,
         height: 9,
@@ -2105,8 +2106,8 @@ class _DeviceTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Tooltip(
-            tooltip: (context) => const TooltipContainer(child: Text('Revoke')),
+          AppTooltip(
+            message: 'Revoke',
             child: HoverTap(
               borderRadius: BorderRadius.circular(6),
               onTap: onRevoke,
@@ -2132,8 +2133,8 @@ class _ReloadButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) => const TooltipContainer(child: Text('Reload')),
+    return AppTooltip(
+      message: 'Reload',
       child: HoverTap(
         borderRadius: BorderRadius.circular(6),
         onTap: busy ? null : () => onTap(),
@@ -2540,8 +2541,8 @@ class _CronTile extends StatelessWidget {
     String tip,
     Future<void> Function() onTap,
   ) {
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tip)),
+    return AppTooltip(
+      message: tip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(6),
         onTap: () => onTap(),
@@ -3579,8 +3580,8 @@ class _DaemonTile extends StatelessWidget {
     String tip,
     Future<void> Function() onTap,
   ) {
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tip)),
+    return AppTooltip(
+      message: tip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(6),
         onTap: () => onTap(),

@@ -10,6 +10,7 @@ import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter/material.dart' as m;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:gpt_markdown/gpt_markdown.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Renderiza o Markdown (GFM + code) da resposta do agente, com a identidade
@@ -184,8 +185,8 @@ class _CopyButtonState extends State<_CopyButton> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) => const TooltipContainer(child: Text('Copy code')),
+    return AppTooltip(
+      message: 'Copy code',
       child: HoverTap(
         onTap: _copy,
         borderRadius: BorderRadius.circular(5),

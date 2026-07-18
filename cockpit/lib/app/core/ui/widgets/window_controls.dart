@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -293,8 +294,8 @@ class _WinButtonState extends State<_WinButton> {
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: Tooltip(
-        tooltip: (context) => TooltipContainer(child: Text(widget.tooltip)),
+      child: AppTooltip(
+        message: widget.tooltip,
         child: GestureDetector(
           onTap: widget.onTap,
           child: Container(

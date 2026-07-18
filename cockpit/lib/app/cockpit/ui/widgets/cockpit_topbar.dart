@@ -8,6 +8,7 @@ import 'package:cockpit/app/core/ui/widgets/window_controls.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Top bar (~46px) customizada — substitui a barra nativa da janela. Semáforo
@@ -104,8 +105,8 @@ class _IconBtn extends StatelessWidget {
     final iconColor = !enabled
         ? colors.text3.withValues(alpha: 0.35)
         : (active ? colors.accentText : colors.text3);
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         onTap: enabled ? onTap : () {},
         color: active ? colors.accentSoft : null,

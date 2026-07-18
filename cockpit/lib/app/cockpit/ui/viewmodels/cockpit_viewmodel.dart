@@ -1485,6 +1485,22 @@ class CockpitViewModel extends ChangeNotifier {
   /// `git push` no repo em [repoPath].
   GitRun gitPush(String repoPath) => _gitRunner.run(repoPath, const ['push']);
 
+  /// "Update from parent": mergeia a branch **do pai** (root de origem) no
+  /// checkout do worktree [fork] — o inverso do [mergeWorktreeToParent].
+  /// Conflito fica no worktree pro usuário resolver (exit ≠ 0 no dialog);
+  /// o pai nunca é tocado.
+  GitRun updateWorktreeFromParent(Project fork) {
+    final origin = _forkOriginPath(fork);
+    final parentBranch = origin == null ? null : _gitInfo[origin]?.branch;
+    if (parentBranch == null) {
+      final controller = StreamController<String>()
+        ..add('Parent branch not found.');
+      unawaited(controller.close());
+      return GitRun(output: controller.stream, exitCode: Future.value(1));
+    }
+    return _gitRunner.run(fork.path, ['merge', parentBranch]);
+  }
+
   /// Mergeia a branch do worktree [fork] no checkout do workspace pai. Em
   /// sucesso, remove o worktree (reusa [removeWorktree] → kill+close) e seleciona
   /// o pai. Devolve o handle ao vivo pro dialog de processo.

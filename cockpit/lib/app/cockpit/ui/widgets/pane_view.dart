@@ -28,6 +28,7 @@ import 'package:cockpit/app/core/ui/settings_controller.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:xterm/xterm.dart';
 
@@ -394,8 +395,8 @@ class _StripButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,
@@ -920,8 +921,8 @@ class _TabAdd extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) => const TooltipContainer(child: Text('New tab')),
+    return AppTooltip(
+      message: 'New tab',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -993,9 +994,8 @@ class _TabProfilePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Tooltip(
-      tooltip: (context) =>
-          const TooltipContainer(child: Text('New terminal…')),
+    return AppTooltip(
+      message: 'New terminal…',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _open(context),
@@ -1031,8 +1031,8 @@ class _PaneTools extends StatelessWidget {
     final colors = context.colors;
     final iconColor = colors.text3;
     const spacing = 13.0;
-    Widget btn(Widget icon, String tip, VoidCallback onTap) => Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tip)),
+    Widget btn(Widget icon, String tip, VoidCallback onTap) => AppTooltip(
+      message: tip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,

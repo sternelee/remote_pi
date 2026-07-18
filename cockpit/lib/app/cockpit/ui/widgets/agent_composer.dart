@@ -21,6 +21,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// Composer do design: input + toolbar (modelo · effort · aprovação · enviar).
@@ -1028,9 +1029,8 @@ class _ContextGauge extends StatelessWidget {
         ? colors.error
         : (fraction >= 0.75 ? colors.warn : colors.accentText);
     final pct = percent.toStringAsFixed(percent < 10 ? 1 : 0);
-    return Tooltip(
-      tooltip: (context) =>
-          TooltipContainer(child: Text('Context: $pct% of the window')),
+    return AppTooltip(
+      message: 'Context: $pct% of the window',
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: SizedBox(
@@ -1124,8 +1124,8 @@ class _BarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: onTap,
@@ -1169,9 +1169,8 @@ class _SendButton extends StatelessWidget {
       fg = colors.text3;
       icon = Icons.arrow_upward;
     }
-    return Tooltip(
-      tooltip: (context) =>
-          TooltipContainer(child: Text(streaming ? 'Stop' : 'Send')),
+    return AppTooltip(
+      message: streaming ? 'Stop' : 'Send',
       // borderRadius 15 num quadrado 30×30 = círculo (substitui o CircleBorder
       // do Material; HoverTap só aceita BorderRadius).
       child: HoverTap(
@@ -1219,8 +1218,8 @@ class _RelayButton extends StatelessWidget {
         'Relay offline',
       ),
     };
-    return Tooltip(
-      tooltip: (context) => TooltipContainer(child: Text(tooltip)),
+    return AppTooltip(
+      message: tooltip,
       child: HoverTap(
         borderRadius: BorderRadius.circular(5),
         onTap: session.isAlive

@@ -24,6 +24,7 @@ import 'package:flutter/services.dart'
         KeyEvent,
         KeyRepeatEvent,
         LogicalKeyboardKey;
+import 'package:cockpit/app/core/ui/widgets/app_tooltip.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
@@ -520,6 +521,19 @@ class _CockpitPageState extends State<CockpitPage> {
     );
   }
 
+  /// "Update from Parent": mergeia a branch do pai (root de origem) no
+  /// worktree — o inverso do merge. Conflito fica no worktree pro usuário
+  /// resolver (o dialog mostra a saída do git).
+  Future<void> _updateWorktree(Project fork) async {
+    final run = _vm.updateWorktreeFromParent(fork);
+    await showGitProcessDialog(
+      context,
+      title: 'Update from Parent — ${fork.name}',
+      output: run.output,
+      success: run.exitCode.then((c) => c == 0),
+    );
+  }
+
   /// "Merge to Parent": mergeia a branch do worktree no pai. Bloqueia se o
   /// worktree tem mudanças não commitadas; conflito → aborta e mostra o erro;
   /// sucesso → o VM remove o worktree e volta pro pai. Processo ao vivo no dialog.
@@ -737,6 +751,7 @@ class _CockpitPageState extends State<CockpitPage> {
                             onDelete: _deleteProject,
                             onCreateWorktree: _createWorktree,
                             onRemoveWorktree: _removeWorktree,
+                            onUpdateWorktree: _updateWorktree,
                             onMergeWorktree: _mergeWorktree,
                             onSync: _syncProject,
                             onPull: _pullProject,
@@ -1092,9 +1107,8 @@ class _LspStatusBarState extends State<_LspStatusBar> {
                     style: context.typo.label.copyWith(color: colors.text2),
                   ),
                 ),
-                Tooltip(
-                  tooltip: (context) =>
-                      const TooltipContainer(child: Text('Restart server')),
+                AppTooltip(
+                  message: 'Restart server',
                   child: HoverTap(
                     borderRadius: BorderRadius.circular(6),
                     onTap: _restarting ? () {} : () => _restart(vm),
