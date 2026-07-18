@@ -60,10 +60,28 @@ Future<T?> showAppMenu<T>(
   final colors = context.colors;
   final anchored = globalPosition == null;
 
+  // O `globalPosition` do gesto vem em coordenadas da JANELA (físicas), mas o
+  // overlay dos popovers vive dentro do `_AppZoom` (FittedBox do "Interface
+  // size") — com zoom ≠ 1.0 o ponto cru desloca. `globalToLocal` do RenderBox
+  // do overlay aplica a cadeia de transforms inteira (inclusive o scale) e
+  // devolve o ponto no espaço que o popover realmente usa.
+  Offset? position = globalPosition;
+  if (position != null) {
+    final overlayBox = Overlay.of(context).context.findRenderObject();
+    if (overlayBox is RenderBox) {
+      position = overlayBox.globalToLocal(position);
+    }
+  }
+
   final overlay = showPopover<T>(
     context: context,
     // Ponto do clique (menu de contexto) ou âncora no trigger (dropdown).
-    position: globalPosition,
+    position: position,
+    // Com posição explícita, `follow` precisa ser false: o default (true)
+    // liga um ticker que recalcula a posição A PARTIR DO WIDGET âncora a cada
+    // frame, sobrescrevendo o ponto do clique — o menu "grudava" no top-left
+    // do item em vez de abrir no cursor.
+    follow: anchored,
     alignment: Alignment.topLeft,
     anchorAlignment: anchored ? Alignment.bottomLeft : Alignment.topLeft,
     offset: anchored ? const Offset(0, 4) : null,

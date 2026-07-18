@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:cockpit/app/cockpit/domain/entities/file_node.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_file_status.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_info.dart';
+import 'package:cockpit/app/cockpit/ui/widgets/commit_message_dialog.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/confirm_dialog.dart';
 import 'package:cockpit/app/core/domain/result.dart';
 import 'package:cockpit/app/core/ui/widgets/app_menu.dart';
@@ -66,7 +67,22 @@ class FileTreePanel extends StatefulWidget {
     this.tasksPanel,
     this.roots = const <WorkspaceRoot>[],
     this.onRootContextMenu,
+    this.onUnstageFile,
+    this.onDiscardFile,
+    this.onCommitFile,
   });
+
+  /// Source Control: comita só o arquivo, com a mensagem do dialog.
+  /// `null` = sucesso; senão a mensagem de erro do git.
+  final Future<String?> Function(String absPath, String message)? onCommitFile;
+
+  /// Source Control: tira o arquivo do index (`git restore --staged`).
+  /// `null` no retorno = sucesso; senão a mensagem de erro do git.
+  final Future<String?> Function(String absPath)? onUnstageFile;
+
+  /// Source Control: descarta a mudança do working tree (destrutivo — o
+  /// painel confirma antes). `null` = sucesso.
+  final Future<String?> Function(String absPath)? onDiscardFile;
 
   /// Roots git do workspace (derivadas). 0–1 itens = single-root, layout de
   /// hoje; 2+ = multi-root com seções por root.
@@ -74,7 +90,8 @@ class FileTreePanel extends StatefulWidget {
 
   /// Botão-direito no cabeçalho de uma root (multi-root): a page abre o menu
   /// de contexto (Sync/Pull/Push/worktree/terminal). `null` = sem menu.
-  final void Function(WorkspaceRoot root, Offset globalPosition)? onRootContextMenu;
+  final void Function(WorkspaceRoot root, Offset globalPosition)?
+  onRootContextMenu;
 
   /// Notificado a cada Cmd+Shift+F → ativa a aba de busca (além de focar o
   /// campo, que o próprio [searchPanel] faz). `null` = sem projeto.
@@ -211,6 +228,82 @@ class _FileTreePanelState extends State<FileTreePanel> {
     _treeFocus.dispose();
     super.dispose();
   }
+
+  /// Botão-direito num arquivo do Source Control: View Diff + Unstage OU
+  /// Discard (um ou outro, pelo estado do arquivo). Discard confirma antes
+  /// (destrutivo) e mostra o erro do git, se houver.
+  Future<void> _showChangedFileMenu(String absPath, Offset pos) async {
+    final status = widget.gitStatusOf(absPath);
+    final staged = status == GitFileStatus.staged;
+    final name = absPath.split('/').last;
+    final pick = await showAppMenu<String>(
+      context,
+      globalPosition: pos,
+      items: [
+        const AppMenuItem(
+          value: 'diff',
+          label: 'View Diff',
+          icon: Icons.difference_outlined,
+        ),
+        if (widget.onCommitFile != null)
+          AppMenuItem(
+            value: 'commit',
+            label: staged ? 'Commit' : 'Stage and Commit',
+            icon: Icons.check_circle_outline,
+          ),
+        if (staged && widget.onUnstageFile != null)
+          const AppMenuItem(
+            value: 'unstage',
+            label: 'Unstage',
+            icon: Icons.remove_circle_outline,
+          )
+        else if (!staged && widget.onDiscardFile != null)
+          const AppMenuItem(
+            value: 'discard',
+            label: 'Discard Changes',
+            icon: Icons.undo,
+            danger: true,
+          ),
+      ],
+    );
+    if (pick == null || !mounted) return;
+    switch (pick) {
+      case 'diff':
+        widget.onOpenDiff(absPath);
+      case 'commit':
+        await showCommitMessageDialog(
+          context,
+          fileName: name,
+          staged: staged,
+          onCommit: (message) => widget.onCommitFile!(absPath, message),
+        );
+      case 'unstage':
+        final err = await widget.onUnstageFile!(absPath);
+        if (err != null && mounted) await _showGitError(err);
+      case 'discard':
+        final untracked = status == GitFileStatus.untracked;
+        final ok = await showConfirmDialog(
+          context,
+          title: 'Discard changes?',
+          message: untracked
+              ? '"$name" is untracked — discarding moves the file to the '
+                    'trash.'
+              : 'Discard the changes in "$name"? This cannot be undone.',
+          confirmLabel: 'Discard',
+          danger: true,
+        );
+        if (!ok || !mounted) return;
+        final err = await widget.onDiscardFile!(absPath);
+        if (err != null && mounted) await _showGitError(err);
+    }
+  }
+
+  Future<void> _showGitError(String message) => showConfirmDialog(
+    context,
+    title: 'Git error',
+    message: message,
+    confirmLabel: 'OK',
+  );
 
   /// Cmd+Shift+F: revela a aba de busca (o campo é focado pelo próprio painel).
   void _onSearchFocusRequested() {
@@ -502,6 +595,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
                 ? _ChangedTree(
                     rootPath: widget.rootPath,
                     roots: widget.roots,
+                    onFileContextMenu: _showChangedFileMenu,
                     changedPaths: widget.changedPaths,
                     gitStatusOf: widget.gitStatusOf,
                     selectedPath: effectiveSelected,
@@ -518,8 +612,7 @@ class _FileTreePanelState extends State<FileTreePanel> {
                     // Soltar no espaço vazio da árvore move pra RAIZ do
                     // workspace (as pastas, mais internas, capturam antes).
                     child: DragTarget<String>(
-                      onWillAcceptWithDetails: (d) =>
-                          d.data != widget.rootPath,
+                      onWillAcceptWithDetails: (d) => d.data != widget.rootPath,
                       onAcceptWithDetails: (d) =>
                           _requestMove(d.data, widget.rootPath),
                       builder: (context, candidates, _) =>
@@ -644,10 +737,7 @@ class _RootHeader extends StatelessWidget {
                   child: Text(
                     git.branch,
                     overflow: TextOverflow.ellipsis,
-                    style: typo.mono.copyWith(
-                      fontSize: 10,
-                      color: colors.warn,
-                    ),
+                    style: typo.mono.copyWith(fontSize: 10, color: colors.warn),
                   ),
                 ),
               ],
@@ -878,8 +968,7 @@ class _FolderState extends State<_Folder> {
       onWillAcceptWithDetails: (d) =>
           d.data != widget.node.path &&
           !widget.node.path.startsWith('${d.data}/'),
-      onAcceptWithDetails: (d) =>
-          edit.onRequestMove(d.data, widget.node.path),
+      onAcceptWithDetails: (d) => edit.onRequestMove(d.data, widget.node.path),
       builder: (context, candidates, _) => Container(
         decoration: candidates.isNotEmpty
             ? BoxDecoration(
@@ -1369,6 +1458,7 @@ class _ChangedTree extends StatelessWidget {
   const _ChangedTree({
     required this.rootPath,
     required this.roots,
+    required this.onFileContextMenu,
     required this.changedPaths,
     required this.gitStatusOf,
     required this.selectedPath,
@@ -1381,6 +1471,9 @@ class _ChangedTree extends StatelessWidget {
 
   /// Roots do workspace (2+ = seções por root; senão fluxo plano).
   final List<WorkspaceRoot> roots;
+
+  /// Botão-direito num arquivo → menu (View Diff / Unstage / Discard).
+  final void Function(String absPath, Offset pos) onFileContextMenu;
   final List<String> changedPaths;
   final GitFileStatus? Function(String absolutePath) gitStatusOf;
   final String? selectedPath;
@@ -1469,6 +1562,7 @@ class _ChangedTree extends StatelessWidget {
       selectedPath: selectedPath,
       onOpenDiff: onOpenDiff,
       onTapDiff: onTapDiff,
+      onFileContextMenu: onFileContextMenu,
     );
   }
 
@@ -1480,6 +1574,7 @@ class _ChangedTree extends StatelessWidget {
         selected: f.absPath == selectedPath,
         onTap: () => onTapDiff(f.absPath),
         onDoubleTap: () => onOpenDiff(f.absPath),
+        onSecondaryTap: (pos) => onFileContextMenu(f.absPath, pos),
       ),
   ];
 
@@ -1610,6 +1705,7 @@ class _ChangedDirectoryView extends StatefulWidget {
     required this.selectedPath,
     required this.onOpenDiff,
     required this.onTapDiff,
+    required this.onFileContextMenu,
     this.depth = 0,
     this.isRoot = true,
   });
@@ -1619,6 +1715,7 @@ class _ChangedDirectoryView extends StatefulWidget {
   final String? selectedPath;
   final ValueChanged<String> onOpenDiff;
   final ValueChanged<String> onTapDiff;
+  final void Function(String absPath, Offset pos) onFileContextMenu;
   final int depth;
   final bool isRoot;
 
@@ -1690,6 +1787,7 @@ class _ChangedDirectoryViewState extends State<_ChangedDirectoryView> {
               selectedPath: widget.selectedPath,
               onOpenDiff: widget.onOpenDiff,
               onTapDiff: widget.onTapDiff,
+              onFileContextMenu: widget.onFileContextMenu,
               depth: widget.isRoot ? 0 : widget.depth + 1,
               isRoot: false,
             ),
@@ -1703,6 +1801,8 @@ class _ChangedDirectoryViewState extends State<_ChangedDirectoryView> {
               showDirectory: false,
               onTap: () => widget.onTapDiff(file.absPath),
               onDoubleTap: () => widget.onOpenDiff(file.absPath),
+              onSecondaryTap: (pos) =>
+                  widget.onFileContextMenu(file.absPath, pos),
             ),
         ],
       ],
@@ -1710,7 +1810,8 @@ class _ChangedDirectoryViewState extends State<_ChangedDirectoryView> {
   }
 }
 
-/// Uma linha da lista plana de source control (só leitura, sem menu).
+/// Uma linha da lista de source control. Clique = diff; botão-direito =
+/// menu de contexto (View Diff / Unstage / Discard).
 class _ChangedRow extends StatefulWidget {
   const _ChangedRow({
     super.key,
@@ -1719,6 +1820,7 @@ class _ChangedRow extends StatefulWidget {
     required this.selected,
     required this.onTap,
     required this.onDoubleTap,
+    this.onSecondaryTap,
     this.depth = 0,
     this.showDirectory = true,
   });
@@ -1728,6 +1830,9 @@ class _ChangedRow extends StatefulWidget {
   final bool selected;
   final VoidCallback? onTap;
   final VoidCallback? onDoubleTap;
+
+  /// Botão-direito (posição global do clique) → menu de contexto.
+  final void Function(Offset globalPos)? onSecondaryTap;
   final int depth;
   final bool showDirectory;
 
@@ -1761,37 +1866,53 @@ class _ChangedRowState extends State<_ChangedRow> {
     final nameColor =
         _gitColor(colors, widget.gitStatus) ??
         (widget.selected ? colors.text : colors.text2);
-    return HoverTap(
-      color: widget.selected ? colors.panel2 : Colors.transparent,
-      hoverColor: colors.panel,
-      borderRadius: BorderRadius.circular(5),
-      onTap: _handleTap,
-      padding: EdgeInsets.only(left: 6 + widget.depth * 14, right: 6),
-      child: SizedBox(
-        height: 26,
-        child: Row(
-          children: [
-            FileTypeIcon.file(file.name, size: 16),
-            const SizedBox(width: 7),
-            // Nome do arquivo (não encolhe) + diretório esmaecido (trunca).
-            Flexible(
-              child: Text(
-                file.name,
-                overflow: TextOverflow.ellipsis,
-                style: typo.body.copyWith(fontSize: 13, color: nameColor),
-              ),
-            ),
-            if (widget.showDirectory && file.dir.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Expanded(
+    return GestureDetector(
+      onSecondaryTapDown: widget.onSecondaryTap == null
+          ? null
+          : (d) => widget.onSecondaryTap!(d.globalPosition),
+      child: HoverTap(
+        color: widget.selected ? colors.panel2 : Colors.transparent,
+        hoverColor: colors.panel,
+        borderRadius: BorderRadius.circular(5),
+        onTap: _handleTap,
+        padding: EdgeInsets.only(left: 6 + widget.depth * 14, right: 6),
+        child: SizedBox(
+          height: 26,
+          child: Row(
+            children: [
+              FileTypeIcon.file(file.name, size: 16),
+              const SizedBox(width: 7),
+              // Nome do arquivo (não encolhe) + diretório esmaecido (trunca).
+              Flexible(
                 child: Text(
-                  file.dir,
+                  file.name,
                   overflow: TextOverflow.ellipsis,
-                  style: typo.label.copyWith(fontSize: 11, color: colors.text4),
+                  style: typo.body.copyWith(
+                    fontSize: 13,
+                    color: nameColor,
+                    // Deletado = riscado (strikethrough), além da cor.
+                    decoration: widget.gitStatus == GitFileStatus.deleted
+                        ? TextDecoration.lineThrough
+                        : null,
+                    decorationColor: nameColor,
+                  ),
                 ),
               ),
+              if (widget.showDirectory && file.dir.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    file.dir,
+                    overflow: TextOverflow.ellipsis,
+                    style: typo.label.copyWith(
+                      fontSize: 11,
+                      color: colors.text4,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

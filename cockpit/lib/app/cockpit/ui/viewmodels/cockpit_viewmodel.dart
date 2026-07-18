@@ -1515,6 +1515,74 @@ class CockpitViewModel extends ChangeNotifier {
     return _worktreeMgr.isBranchMerged(origin, fork.name);
   }
 
+  /// Unstage (Source Control): `git restore --staged -- <arquivo>` na root
+  /// dona do caminho. `null` = sucesso; senão a saída de erro do git.
+  Future<String?> unstageFile(String absPath) =>
+      _restoreFile(absPath, staged: true);
+
+  /// Discard (Source Control): joga fora a mudança do working tree —
+  /// `git restore -- <arquivo>`; untracked não tem "restore", então vai pra
+  /// lixeira via [deletePath] (reversível no macOS). `null` = sucesso.
+  Future<String?> discardFile(String absPath) async {
+    if (gitStatusForPath(absPath) == GitFileStatus.untracked) {
+      final res = await deletePath(absPath);
+      return res.fold((_) => null, (e) => e);
+    }
+    return _restoreFile(absPath, staged: false);
+  }
+
+  /// Commit (Source Control): comita **só** [absPath] com [message], na root
+  /// dona do caminho. Untracked precisa de `git add` antes (pathspec de commit
+  /// não casa com arquivo não-rastreado); nos demais o
+  /// `git commit -m <msg> -- <arquivo>` já auto-stageia a mudança do working
+  /// tree. `null` = sucesso; senão a saída de erro do git.
+  Future<String?> commitFile(String absPath, String message) async {
+    final pid = _selectedProjectId;
+    if (pid == null) return 'No workspace selected.';
+    final root = rootContaining(pid, absPath);
+    if (root == null) return 'File is outside the workspace roots.';
+    final rel = _subOf(absPath, root);
+    if (gitStatusForPath(absPath) == GitFileStatus.untracked) {
+      final err = await _collectGit(root, ['add', '--', rel]);
+      if (err != null) return err;
+    }
+    final err = await _collectGit(root, ['commit', '-m', message, '--', rel]);
+    unawaited(_refreshGit(pid));
+    return err;
+  }
+
+  /// Roda um git rápido e devolve `null` (exit 0) ou a saída como erro.
+  Future<String?> _collectGit(String root, List<String> args) async {
+    final run = _gitRunner.run(root, args);
+    final lines = <String>[];
+    final sub = run.output.listen(lines.add);
+    final code = await run.exitCode;
+    await sub.cancel();
+    return code == 0 ? null : lines.join('\n');
+  }
+
+  Future<String?> _restoreFile(String absPath, {required bool staged}) async {
+    final pid = _selectedProjectId;
+    if (pid == null) return 'No workspace selected.';
+    final root = rootContaining(pid, absPath);
+    if (root == null) return 'File is outside the workspace roots.';
+    final rel = _subOf(absPath, root);
+    final run = _gitRunner.run(root, [
+      'restore',
+      if (staged) '--staged',
+      '--',
+      rel,
+    ]);
+    final lines = <String>[];
+    final sub = run.output.listen(lines.add);
+    final code = await run.exitCode;
+    await sub.cancel();
+    unawaited(_refreshGit(pid));
+    _fileTreeRevision++; // conteúdo em disco pode ter mudado (restore)
+    notifyListeners();
+    return code == 0 ? null : lines.join('\n');
+  }
+
   // === Git commands (Sync / Pull / Push) — feature "more git" ===
 
   /// Sync = `git pull` e, se OK, `git push` no repo em [repoPath]. Stream ao vivo.
