@@ -36,6 +36,7 @@ class ProjectsRail extends StatefulWidget {
     required this.onRemoveWorktree,
     required this.onMergeWorktree,
     required this.onUpdateWorktree,
+    required this.onForkWorktree,
     required this.onSync,
     required this.onPull,
     required this.onPush,
@@ -96,6 +97,9 @@ class ProjectsRail extends StatefulWidget {
   /// "Update from Parent": mergeia a branch do pai no worktree (fork).
   final ValueChanged<Project> onUpdateWorktree;
 
+  /// "Fork Worktree": nova worktree ramificada da branch deste fork.
+  final ValueChanged<Project> onForkWorktree;
+
   /// Ações git no workspace, direcionadas a [rootPath] (multi-root: escolhida
   /// no submenu do kebab; single-root: a própria raiz, sem perguntar).
   final void Function(Project project, String rootPath) onSync;
@@ -138,6 +142,7 @@ class _ProjectsRailState extends State<ProjectsRail> {
           onRemove: () => widget.onRemoveWorktree(forks[i]),
           onMerge: () => widget.onMergeWorktree(forks[i]),
           onUpdate: () => widget.onUpdateWorktree(forks[i]),
+          onFork: () => widget.onForkWorktree(forks[i]),
         ),
     ];
   }
@@ -475,6 +480,7 @@ class _WorktreeItem extends StatelessWidget {
     required this.onRemove,
     required this.onMerge,
     required this.onUpdate,
+    required this.onFork,
   });
 
   final Project worktree;
@@ -493,6 +499,7 @@ class _WorktreeItem extends StatelessWidget {
   final VoidCallback onRemove;
   final VoidCallback onMerge;
   final VoidCallback onUpdate;
+  final VoidCallback onFork;
 
   @override
   Widget build(BuildContext context) {
@@ -559,6 +566,7 @@ class _WorktreeItem extends StatelessWidget {
                       onRemove: onRemove,
                       onMerge: onMerge,
                       onUpdate: onUpdate,
+                      onFork: onFork,
                     ),
                   ],
                 ),
@@ -578,12 +586,14 @@ class _ForkMenuButton extends StatelessWidget {
     required this.onRemove,
     required this.onMerge,
     required this.onUpdate,
+    required this.onFork,
   });
 
   final String branch;
   final VoidCallback onRemove;
   final VoidCallback onMerge;
   final VoidCallback onUpdate;
+  final VoidCallback onFork;
 
   Future<void> _show(BuildContext context) async {
     final pick = await showAppMenu<String>(
@@ -601,6 +611,13 @@ class _ForkMenuButton extends StatelessWidget {
           label: 'Update from Parent',
           icon: Icons.download_outlined,
         ),
+        // Nova worktree ramificada da branch DESTE fork (não do HEAD do
+        // pai) — vira irmão na lista, herdando o layout deste fork.
+        AppMenuItem(
+          value: 'fork',
+          label: 'Fork Worktree',
+          icon: Icons.call_split,
+        ),
         AppMenuItem(
           value: 'copy',
           label: 'Copy branch',
@@ -616,6 +633,7 @@ class _ForkMenuButton extends StatelessWidget {
     );
     if (pick == 'merge') onMerge();
     if (pick == 'update') onUpdate();
+    if (pick == 'fork') onFork();
     if (pick == 'copy') {
       await Clipboard.setData(ClipboardData(text: branch));
     }

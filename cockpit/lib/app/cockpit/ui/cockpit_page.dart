@@ -521,6 +521,23 @@ class _CockpitPageState extends State<CockpitPage> {
     );
   }
 
+  /// "Fork Worktree": nova worktree ramificada da branch do fork [base] —
+  /// mesmo dialog do criar, validando contra o namespace do repo de origem.
+  Future<void> _forkWorktree(Project base) async {
+    final vm = _vm;
+    final namespace = await vm.forkWorktreeNamespace(base.id);
+    if (!mounted) return;
+    await showWorktreeCreateDialog(
+      context,
+      rootName: base.name,
+      namespace: namespace,
+      onCreate: (name) async {
+        final res = await vm.forkWorktree(base.id, name);
+        return res.fold((_) => null, (e) => e.message);
+      },
+    );
+  }
+
   /// "Update from Parent": mergeia a branch do pai (root de origem) no
   /// worktree — o inverso do merge. Conflito fica no worktree pro usuário
   /// resolver (o dialog mostra a saída do git).
@@ -752,6 +769,7 @@ class _CockpitPageState extends State<CockpitPage> {
                             onCreateWorktree: _createWorktree,
                             onRemoveWorktree: _removeWorktree,
                             onUpdateWorktree: _updateWorktree,
+                            onForkWorktree: _forkWorktree,
                             onMergeWorktree: _mergeWorktree,
                             onSync: _syncProject,
                             onPull: _pullProject,

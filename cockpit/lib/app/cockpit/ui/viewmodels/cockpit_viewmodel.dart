@@ -1376,20 +1376,29 @@ class CockpitViewModel extends ChangeNotifier {
     String rootId,
     String name, {
     String? rootPath,
+    String? baseRef,
+    String? layoutSourceId,
   }) async {
     final root = _projectById(rootId);
     if (root == null) {
       return const Failure(WorktreeOpError('Workspace not found.'));
     }
     // Multi-root: o `git worktree add` parte da root escolhida, não da mãe.
-    final res = await _worktreeMgr.add(rootPath ?? root.path, name);
+    // [baseRef] ("Fork Worktree"): ramifica da branch de outro fork, mas a
+    // pasta nasce sempre no repo de origem.
+    final res = await _worktreeMgr.add(
+      rootPath ?? root.path,
+      name,
+      baseRef: baseRef,
+    );
     switch (res) {
       case Failure(:final error):
         return Failure<Project, WorktreeOpError>(error);
       case Success(:final value):
-        // Clona a estrutura (panes/abas/posições) do pai pra o fork: mesma
-        // organização, pasta nova, sessões do zero (ver _cloneLayoutForWorktree).
-        final clonedLayout = _cloneLayoutForWorktree(rootId);
+        // Clona a estrutura (panes/abas/posições) pro fork: do pai por padrão,
+        // ou do fork de origem no "Fork Worktree" (mesma organização, pasta
+        // nova, sessões do zero — ver _cloneLayoutForWorktree).
+        final clonedLayout = _cloneLayoutForWorktree(layoutSourceId ?? rootId);
         await _refreshWorktrees(rootId); // insere o fork em _projectList
         final fork = _projectById(value.path);
         if (fork == null) {
@@ -1414,6 +1423,38 @@ class CockpitViewModel extends ChangeNotifier {
 
   /// Branches locais + worktrees de [rootId], pra validação ao vivo do dialog
   /// de criar (decisão 11).
+  /// "Fork Worktree": cria uma worktree nova ramificada da **branch do fork**
+  /// [forkId], materializada no repo de origem (nunca aninhada). O fork novo
+  /// entra como irmão na lista (mesmo pai), herdando o layout do fork base.
+  Future<Result<Project, WorktreeOpError>> forkWorktree(
+    String forkId,
+    String name,
+  ) async {
+    final fork = _projectById(forkId);
+    if (fork == null || fork.parentId == null) {
+      return const Failure(WorktreeOpError('Worktree not found.'));
+    }
+    final origin = _forkOriginPath(fork);
+    if (origin == null) {
+      return const Failure(WorktreeOpError('Origin root not found.'));
+    }
+    return createWorktree(
+      fork.parentId!,
+      name,
+      rootPath: origin,
+      baseRef: fork.name,
+      layoutSourceId: forkId,
+    );
+  }
+
+  /// Namespace pra validação do "Fork Worktree" — o do repo de origem do fork.
+  Future<WorktreeNamespace> forkWorktreeNamespace(String forkId) async {
+    final fork = _projectById(forkId);
+    final origin = fork == null ? null : _forkOriginPath(fork);
+    if (origin == null) return const WorktreeNamespace.empty();
+    return _worktreeMgr.namespace(origin);
+  }
+
   Future<WorktreeNamespace> worktreeNamespace(
     String rootId, {
     String? rootPath,

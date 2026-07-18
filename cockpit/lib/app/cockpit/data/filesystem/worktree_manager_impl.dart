@@ -69,8 +69,9 @@ class WorktreeManagerImpl implements WorktreeManager {
   @override
   Future<Result<Worktree, WorktreeOpError>> add(
     String repoPath,
-    String name,
-  ) async {
+    String name, {
+    String? baseRef,
+  }) async {
     try {
       final git = await _resolveGit();
       // Regra cross-plataforma: só cria worktree quando a branch NÃO existe.
@@ -87,7 +88,7 @@ class WorktreeManagerImpl implements WorktreeManager {
       // ignore o checkout apareceria como `untracked` no status do usuário.
       await _ensureIgnored(repoPath);
       final target = '$repoPath/$worktreesSubdir/$name';
-      // Branch nova a partir do HEAD atual do repo (sem ref explícito).
+      // Branch nova a partir do HEAD do repo, ou de [baseRef] (fork de fork).
       final res = await Process.run(git, [
         '-C',
         repoPath,
@@ -96,6 +97,7 @@ class WorktreeManagerImpl implements WorktreeManager {
         target,
         '-b',
         name,
+        ?baseRef,
       ]);
       if (res.exitCode != 0) {
         return Failure(WorktreeOpError(_errText(res)));
