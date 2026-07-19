@@ -25,4 +25,21 @@ class RedisBrowserSession extends PaneItem {
 
   @override
   String get title => connName;
+
+  /// Pattern semeado de fora (CLI `cockpit redis browse --pattern`, plano 53
+  /// decisão E): cai no campo de busca visível — o widget montado escuta a
+  /// sessão e aplica; no mount, o initState consome o valor pendente.
+  String? seedPattern;
+
+  void requestPattern(String pattern) {
+    seedPattern = pattern;
+    notifyListeners();
+  }
+
+  /// Consome o seed pendente (uma vez).
+  String? takeSeedPattern() {
+    final p = seedPattern;
+    seedPattern = null;
+    return p;
+  }
 }

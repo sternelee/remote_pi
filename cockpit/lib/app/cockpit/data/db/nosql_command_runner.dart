@@ -105,6 +105,10 @@ class NoSqlRunnerImpl implements NoSqlRunner {
     final database = conn.database;
     return _guard(
       () => Isolate.run(() async {
+        // extendedJsonCodec OFF (plano 53, decisão C): replies mantêm
+        // `{"$oid":…}`/`{"$date":…}` como JSON puro — round-trip lossless pro
+        // collection browser e saída canônica no CLI (ObjectId como hex cru
+        // era ambíguo). Comandos de entrada já são extended JSON do chamador.
         final mongo = AnakiMongoDb(
           MongoDriver(
             host: host,
@@ -113,6 +117,7 @@ class NoSqlRunnerImpl implements NoSqlRunner {
             password: password,
             database: database,
           ),
+          extendedJsonCodec: false,
         );
         await mongo.open();
         try {

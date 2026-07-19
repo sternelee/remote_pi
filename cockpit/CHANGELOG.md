@@ -14,6 +14,26 @@ As versões seguem o `version:` do `pubspec.yaml` (SSOT). O campo `notes` do
   meio da frase).
 -->
 
+## [1.13.0] — 2026-07-19
+
+Novo: browsers visuais de Redis e MongoDB na tab Database — tabela de chaves
+editável e collection browser estilo Compass, com abertura via CLI.
+
+### Added
+- **Redis key table:** clique na conexão abre a tabela key/value/type/ttl —
+  edição inline (valor, TTL e rename de chave), compostos expandem com o valor
+  completo, criação dos 5 tipos, SCAN paginado com busca por pattern.
+- **Mongo collection browser:** collections no painel; documentos como cards
+  JSON com highlight, filter bar JSON, editar/inserir/deletar por `_id`.
+  Extended JSON (`$oid`/`$date`) preservado de ponta a ponta.
+- **CLI `cockpit redis|mongo browse`:** o agente abre a view já filtrada pro
+  humano (`--pattern` / `--filter`), sem expor credenciais.
+- Logos de marca (Redis/MongoDB) nas abas dos browsers.
+
+### Fixed
+- `cockpit mongo` agora devolve ObjectId/Date como extended JSON canônico
+  (antes saía hex/string ambíguos).
+
 ## [1.12.0] — 2026-07-19
 
 Novo: acesso a bancos de dados direto no Cockpit — painel de conexões, tab de

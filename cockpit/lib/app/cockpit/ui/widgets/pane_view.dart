@@ -5,6 +5,7 @@ import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/diff_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
+import 'package:cockpit/app/cockpit/ui/session/mongo_browser_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/redis_browser_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_output_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
@@ -20,6 +21,9 @@ import 'package:cockpit/app/cockpit/ui/widgets/confirm_dialog.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/empty_pane.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/diff_viewer.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/db_query_view.dart';
+import 'package:cockpit/app/cockpit/domain/entities/db_connection.dart';
+import 'package:cockpit/app/cockpit/ui/widgets/db_engine_icon.dart';
+import 'package:cockpit/app/cockpit/ui/widgets/db_mongo_view.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/db_redis_table.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/file_viewer.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/terminal_pane.dart';
@@ -145,6 +149,7 @@ IconData _tabIcon(PaneItem? item) {
   if (item is FileViewerSession) return Icons.description_outlined;
   if (item is DiffViewerSession) return Icons.difference_outlined;
   if (item is RedisBrowserSession) return Icons.grid_on_outlined;
+  if (item is MongoBrowserSession) return Icons.data_object_outlined;
   if (item is AgentSession && item.status == AgentStatus.empty) {
     return Icons.edit_outlined;
   }
@@ -354,7 +359,8 @@ class _TabStripState extends State<_TabStrip> {
                           // o login shell, sem escolha a fazer).
                           _TabAdd(
                             onTap: widget.onCreateTab,
-                            trailingBorder: !widget.vm.showTerminalProfilePicker,
+                            trailingBorder:
+                                !widget.vm.showTerminalProfilePicker,
                           ),
                           if (widget.vm.showTerminalProfilePicker)
                             _TabProfilePicker(vm: widget.vm),
@@ -732,6 +738,11 @@ class _TabState extends State<_Tab> {
             children: [
               if (s is FileViewerSession)
                 FileTypeIcon.file(s.title, size: 15)
+              // Browsers de banco usam o logo de marca do engine (plano 52/53).
+              else if (s is RedisBrowserSession)
+                const DbEngineIcon(DbEngine.redis, size: 14)
+              else if (s is MongoBrowserSession)
+                const DbEngineIcon(DbEngine.mongo, size: 14)
               else
                 Icon(
                   icon,
@@ -991,7 +1002,9 @@ class _TabProfilePicker extends StatelessWidget {
     // `context` NÃO é tocado após o await (regra do CLAUDE.md): a ação toda vive
     // na VM, que sobrevive à pane.
     final profile = profiles.where((p) => p.id == chosen).firstOrNull;
-    if (profile == null) return; // re-descoberta mudou a lista no meio do caminho
+    if (profile == null) {
+      return; // re-descoberta mudou a lista no meio do caminho
+    }
     vm.newTabIn('', terminal: true, profile: profile);
   }
 
@@ -1235,6 +1248,17 @@ class _PaneBodyState extends State<_PaneBody> {
     if (item is RedisBrowserSession) {
       final vm = context.read<CockpitViewModel>();
       return RedisTableView(
+        session: item,
+        active: widget.active,
+        focused: widget.focused,
+        workspaceRoot: vm.projectRootOf(item.projectId) ?? '',
+      );
+    }
+
+    // Collection browser Mongo (plano 53): filter bar + cards JSON + CRUD.
+    if (item is MongoBrowserSession) {
+      final vm = context.read<CockpitViewModel>();
+      return MongoCollectionView(
         session: item,
         active: widget.active,
         focused: widget.focused,

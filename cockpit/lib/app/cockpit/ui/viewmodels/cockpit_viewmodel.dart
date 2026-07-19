@@ -17,7 +17,9 @@ import 'package:cockpit/app/cockpit/domain/contracts/app_launcher.dart';
 import 'package:cockpit/app/cockpit/domain/entities/db_result.dart';
 import 'package:cockpit/app/cockpit/domain/entities/dbq_document.dart';
 import 'package:cockpit/app/cockpit/domain/entities/sql_statements.dart';
+import 'package:cockpit/app/cockpit/domain/entities/db_connection.dart';
 import 'package:cockpit/app/cockpit/domain/services/db_query_service.dart';
+import 'package:cockpit/app/cockpit/domain/services/mongo_browse_service.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/content_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_searcher.dart';
@@ -59,6 +61,7 @@ import 'package:cockpit/app/core/utils/user_home.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/diff_viewer_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/file_viewer_session.dart';
+import 'package:cockpit/app/cockpit/ui/session/mongo_browser_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/pane_item.dart';
 import 'package:cockpit/app/cockpit/ui/session/redis_browser_session.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_discovery.dart';
@@ -716,34 +719,86 @@ class CockpitViewModel extends ChangeNotifier {
 
   /// Abre (ou foca) a tabela Redis da conexão [connName] (plano 52). Uma tab
   /// por conexão+projeto: reabrir foca a existente em vez de duplicar.
-  void openRedisBrowser(String connName) {
-    final projectId = _selectedProjectId;
-    final tree = _activeTree;
-    final paneId = projectId == null ? null : _focused[projectId];
-    if (projectId == null || tree == null || paneId == null) return;
+  /// [pattern] (CLI `redis browse`, plano 53) semeia o campo de busca — na tab
+  /// já aberta ele SUBSTITUI o filtro atual (decisão E).
+  /// [projectId] default = projeto selecionado. `false` = workspace sem tab
+  /// aberta pra receber o browser.
+  bool openRedisBrowser(String connName, {String? projectId, String? pattern}) {
+    final session = _openBrowserTab(
+      projectId,
+      matches: (s) => s is RedisBrowserSession && s.connName == connName,
+      make: (id, pid, path) => RedisBrowserSession(
+        id: id,
+        projectId: pid,
+        connName: connName,
+        workingDirectory: path,
+      ),
+    );
+    if (session == null) return false;
+    if (pattern != null) {
+      (session as RedisBrowserSession).requestPattern(pattern);
+    }
+    return true;
+  }
+
+  /// Abre (ou foca) o collection browser Mongo (plano 53). Uma tab por
+  /// conexão+collection+projeto. [filter] semeia a filter bar (substitui na
+  /// tab já aberta — decisão E).
+  bool openMongoBrowser(
+    String connName,
+    String collection, {
+    String? projectId,
+    String? filter,
+  }) {
+    final session = _openBrowserTab(
+      projectId,
+      matches: (s) =>
+          s is MongoBrowserSession &&
+          s.connName == connName &&
+          s.collection == collection,
+      make: (id, pid, path) => MongoBrowserSession(
+        id: id,
+        projectId: pid,
+        connName: connName,
+        collection: collection,
+        workingDirectory: path,
+      ),
+    );
+    if (session == null) return false;
+    if (filter != null) (session as MongoBrowserSession).requestFilter(filter);
+    return true;
+  }
+
+  /// Núcleo comum dos browsers de banco: foca a tab existente que [matches]
+  /// no projeto alvo, ou cria via [make] na pane focada. Devolve a sessão
+  /// (existente ou nova), ou `null` se o projeto não tem árvore montada.
+  PaneItem? _openBrowserTab(
+    String? projectId, {
+    required bool Function(PaneItem) matches,
+    required PaneItem Function(String id, String projectId, String path) make,
+  }) {
+    final pid = projectId ?? _selectedProjectId;
+    final tree = pid == null ? null : _trees[pid];
+    if (pid == null || tree == null) return null;
+    final paneId = _focused[pid] ?? leaves(tree).firstOrNull?.id;
+    if (paneId == null) return null;
 
     for (final s in _sessions.values) {
-      if (s is RedisBrowserSession &&
-          s.projectId == projectId &&
-          s.connName == connName) {
+      if (s.projectId == pid && matches(s)) {
         for (final leaf in leaves(tree)) {
           if (leaf.tabs.contains(s.id)) {
-            selectTab(leaf.id, s.id);
-            return;
+            if (pid == _selectedProjectId) selectTab(leaf.id, s.id);
+            return s;
           }
         }
       }
     }
 
-    final session = RedisBrowserSession(
-      id: _nid('v'),
-      projectId: projectId,
-      connName: connName,
-      workingDirectory: _projectById(projectId)?.path ?? '',
-    );
+    final session = make(_nid('v'), pid, _projectById(pid)?.path ?? '');
     _sessions[session.id] = session;
-    _addLeafTab(projectId, paneId, session.id);
+    _addLeafTab(pid, paneId, session.id);
     notifyListeners();
+    return session;
   }
 
   /// Salva um buffer scratch como arquivo real [fileName] na raiz do workspace
@@ -791,7 +846,9 @@ class CockpitViewModel extends ChangeNotifier {
     if (current == null) return;
     final lf = findLeaf(current, paneId);
     final only = lf?.tabs.length == 1 ? _sessions[lf!.tabs.first] : null;
-    if (lf != null && only is AgentSession && only.status == AgentStatus.empty) {
+    if (lf != null &&
+        only is AgentSession &&
+        only.status == AgentStatus.empty) {
       final emptyId = lf.tabs.first;
       _trees[projectId] = updateLeaf(
         current,
@@ -3068,8 +3125,7 @@ class CockpitViewModel extends ChangeNotifier {
       case 'redis-cmd':
         return _dbCommand(c, (project) async {
           final parts = [
-            for (final p in (c.args['parts'] as List? ?? const []))
-              '$p',
+            for (final p in (c.args['parts'] as List? ?? const [])) '$p',
           ];
           final reply = await _dbService.redisCommand(
             workspaceRoot: project.path,
@@ -3101,9 +3157,82 @@ class CockpitViewModel extends ChangeNotifier {
           return CockpitCommandResult.ok(reply);
         });
 
+      // `cockpit redis browse` / `cockpit mongo browse` (plano 53, decisão D):
+      // o agente abre a view filtrada pro humano. Abrir view ≠ executar — não
+      // devolve dados; valida filtro/conexão ANTES de abrir.
+      case 'redis-browse':
+        return _dbCommand(c, (project) async {
+          final connName = (c.args['db'] ?? '').toString();
+          final err = await _checkBrowseConn(project, connName, DbEngine.redis);
+          if (err != null) return CockpitCommandResult.fail(err);
+          final ok = openRedisBrowser(
+            connName,
+            projectId: project.id,
+            pattern: (c.args['pattern'] ?? '').toString(),
+          );
+          if (!ok) {
+            return const CockpitCommandResult.fail(
+              'workspace has no open pane to attach the browser to',
+            );
+          }
+          return CockpitCommandResult.ok({'opened': 'redis', 'db': connName});
+        });
+
+      case 'mongo-browse':
+        return _dbCommand(c, (project) async {
+          final connName = (c.args['db'] ?? '').toString();
+          final collection = (c.args['collection'] ?? '').toString();
+          if (collection.isEmpty) {
+            return const CockpitCommandResult.fail('missing <collection>');
+          }
+          final err = await _checkBrowseConn(project, connName, DbEngine.mongo);
+          if (err != null) return CockpitCommandResult.fail(err);
+          final filter = (c.args['filter'] ?? '').toString();
+          // Valida o JSON aqui — nunca abrir a tab com filtro quebrado.
+          MongoBrowseService.parseFilter(filter);
+          final ok = openMongoBrowser(
+            connName,
+            collection,
+            projectId: project.id,
+            filter: filter,
+          );
+          if (!ok) {
+            return const CockpitCommandResult.fail(
+              'workspace has no open pane to attach the browser to',
+            );
+          }
+          return CockpitCommandResult.ok({
+            'opened': 'mongo',
+            'db': connName,
+            'collection': collection,
+          });
+        });
+
       default:
         return CockpitCommandResult.fail('unknown command: "${c.cmd}"');
     }
+  }
+
+  /// Valida a conexão alvo de um `browse`: existe no workspace e é do
+  /// [engine] esperado. `null` = ok; senão a mensagem de erro.
+  Future<String?> _checkBrowseConn(
+    Project project,
+    String connName,
+    DbEngine engine,
+  ) async {
+    if (connName.isEmpty) return 'missing --db <name>';
+    final conns = await _dbService.connections(project.path);
+    for (final conn in conns) {
+      if (conn.name == connName) {
+        return conn.engine == engine
+            ? null
+            : '"$connName" is a ${conn.engine.label} connection, '
+                  'not ${engine.label}';
+      }
+    }
+    final available = conns.map((c) => c.name).join(', ');
+    return 'no connection named "$connName" '
+        '(available: ${available.isEmpty ? 'none' : available})';
   }
 
   /// Molde dos comandos `db-*`: resolve o workspace (decisão K do plano 51 —
@@ -3187,6 +3316,7 @@ class CockpitViewModel extends ChangeNotifier {
     if (s is FileViewerSession) return 'file';
     if (s is TaskOutputSession) return 'task';
     if (s is RedisBrowserSession) return 'redis';
+    if (s is MongoBrowserSession) return 'mongo';
     return 'other';
   }
 
@@ -3458,6 +3588,20 @@ class CockpitViewModel extends ChangeNotifier {
           workingDirectory: project.path,
         );
         return true;
+      case 'mongo':
+        final mConn = desc['conn'] as String?;
+        final mColl = desc['collection'] as String?;
+        if (mConn == null || mConn.isEmpty || mColl == null || mColl.isEmpty) {
+          return false;
+        }
+        _sessions[id] = MongoBrowserSession(
+          id: id,
+          projectId: project.id,
+          connName: mConn,
+          collection: mColl,
+          workingDirectory: project.path,
+        );
+        return true;
       case 'empty':
         _makeEmptyWithId(id, project.id);
         return true;
@@ -3683,6 +3827,13 @@ class CockpitViewModel extends ChangeNotifier {
     }
     if (s is RedisBrowserSession) {
       return <String, dynamic>{'type': 'redis', 'conn': s.connName};
+    }
+    if (s is MongoBrowserSession) {
+      return <String, dynamic>{
+        'type': 'mongo',
+        'conn': s.connName,
+        'collection': s.collection,
+      };
     }
     if (s is TaskOutputSession) {
       // A task não roda de novo no restart, mas o output persiste: guarda o

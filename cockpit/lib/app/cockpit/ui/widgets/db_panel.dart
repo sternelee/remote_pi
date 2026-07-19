@@ -278,17 +278,19 @@ class _ConnectionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final typo = context.typo;
-    // SQL expande a árvore de schema; Redis abre a tabela de chaves (plano
-    // 52); Mongo segue CLI-only (sem ação no clique).
+    // SQL expande a árvore de schema; Mongo expande as collections (plano
+    // 53); Redis abre a tabela de chaves direto (plano 52).
     final browsable = conn.engine.isSql;
     final isRedis = conn.engine == DbEngine.redis;
+    final isMongo = conn.engine == DbEngine.mongo;
+    final expandable = browsable || isMongo;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 1),
           child: HoverTap(
-            onTap: browsable
+            onTap: expandable
                 ? onToggle
                 : isRedis
                 ? () => context.read<CockpitViewModel>().openRedisBrowser(
@@ -299,13 +301,13 @@ class _ConnectionTile extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  browsable
+                  expandable
                       ? (expanded ? Icons.expand_more : Icons.chevron_right)
                       : Icons.circle,
-                  size: browsable ? 15 : 5,
+                  size: expandable ? 15 : 5,
                   color: colors.text4,
                 ),
-                SizedBox(width: browsable ? 2 : 7),
+                SizedBox(width: expandable ? 2 : 7),
                 DbEngineIcon(conn.engine, size: 13),
                 const SizedBox(width: 7),
                 Expanded(
@@ -331,12 +333,6 @@ class _ConnectionTile extends StatelessWidget {
                           if (conn.origin == DbConnectionOrigin.local) ...[
                             const SizedBox(width: 6),
                             const _Chip('local'),
-                          ],
-                          // Redis abre a tabela de chaves (plano 52) — só o
-                          // Mongo segue CLI-only.
-                          if (!browsable && !isRedis) ...[
-                            const SizedBox(width: 6),
-                            const _Chip('CLI only'),
                           ],
                         ],
                       ),
@@ -368,6 +364,7 @@ class _ConnectionTile extends StatelessWidget {
         ),
         if (expanded && browsable)
           _SchemaTree(conn: conn, onNewQuery: onNewQuery),
+        if (expanded && isMongo) _MongoCollections(conn: conn),
       ],
     );
   }
@@ -459,6 +456,90 @@ class _SchemaTreeState extends State<_SchemaTree> {
                 if (_openTables.contains(t))
                   _ColumnList(conn: widget.conn, table: t),
               ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _hint(String text, {bool error = false}) => Padding(
+    padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+    child: Text(
+      text,
+      style: context.typo.label.copyWith(
+        fontSize: 10.5,
+        color: error ? context.colors.error : context.colors.text4,
+      ),
+    ),
+  );
+}
+
+/// Collections de uma conexão Mongo (plano 53), carregadas sob demanda —
+/// análogo do `_SchemaTree` SQL. Clique abre o collection browser.
+class _MongoCollections extends StatefulWidget {
+  const _MongoCollections({required this.conn});
+  final DbConnection conn;
+
+  @override
+  State<_MongoCollections> createState() => _MongoCollectionsState();
+}
+
+class _MongoCollectionsState extends State<_MongoCollections> {
+  late final Future<List<String>> _collections;
+
+  @override
+  void initState() {
+    super.initState();
+    _collections = context.read<DatabaseViewModel>().collections(widget.conn);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final typo = context.typo;
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, bottom: 4),
+      child: FutureBuilder<List<String>>(
+        future: _collections,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return _hint('Loading…');
+          }
+          if (snap.hasError) {
+            return _hint(_errorMessage(snap.error), error: true);
+          }
+          final names = snap.data ?? const [];
+          if (names.isEmpty) return _hint('No collections.');
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final name in names)
+                HoverTap(
+                  onTap: () => context
+                      .read<CockpitViewModel>()
+                      .openMongoBrowser(widget.conn.name, name),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 3,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.data_object, size: 11, color: colors.text4),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          name,
+                          overflow: TextOverflow.ellipsis,
+                          style: typo.mono.copyWith(
+                            fontSize: 11.5,
+                            color: colors.text2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           );
         },

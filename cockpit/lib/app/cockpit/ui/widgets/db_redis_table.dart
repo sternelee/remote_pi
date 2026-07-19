@@ -93,11 +93,31 @@ class _RedisTableViewState extends State<RedisTableView> {
     Future.microtask(
       () => vm.setWorkspace(widget.session.projectId, widget.workspaceRoot),
     );
-    if (!_view.loaded) _refresh();
+    widget.session.addListener(_onSessionSeed);
+    // Pattern semeado pelo CLI (`cockpit redis browse`) vence o estado salvo.
+    final seed = widget.session.takeSeedPattern();
+    if (seed != null) {
+      _view.pattern = seed;
+      _pattern.text = seed;
+      _refresh();
+    } else if (!_view.loaded) {
+      _refresh();
+    }
+  }
+
+  /// CLI semeou pattern com a tab já montada (decisão E do plano 53:
+  /// substitui o filtro atual e re-scaneia).
+  void _onSessionSeed() {
+    final seed = widget.session.takeSeedPattern();
+    if (seed == null || !mounted) return;
+    _view.pattern = seed;
+    _pattern.text = seed;
+    _refresh();
   }
 
   @override
   void dispose() {
+    widget.session.removeListener(_onSessionSeed);
     _flashTimer?.cancel();
     _pattern.dispose();
     _editingCtrl?.dispose();

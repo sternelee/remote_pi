@@ -501,14 +501,23 @@ Future<void> _cmdDb(List<String> args) async {
 
 /// `cockpit redis --db <conn> <COMMAND> [args...]` — Redis/cache (CLI-only).
 /// Saída: 1 linha JSON `{"ok": <reply>}` / `{"error":{kind,message}}`.
+/// `cockpit redis browse --db <conn> [--pattern '<glob>']` abre a tabela de
+/// chaves no app (view pro humano — não devolve dados).
 Future<void> _cmdRedis(List<String> args) async {
   if (args.isEmpty || args.first == '--help' || args.first == '-h') {
     stdout.writeln(
       'cockpit redis --db <conn> <COMMAND> [args...]\n'
       '  e.g. cockpit redis --db cache GET session:42\n'
-      '  Output: one JSON line. Connection registered in the Database panel.',
+      '  Output: one JSON line. Connection registered in the Database panel.\n'
+      "cockpit redis browse --db <conn> [--pattern 'user:*']\n"
+      '  Opens the key table in the app, pre-filtered. Opens a view — '
+      'returns no data.',
     );
     exit(args.isEmpty ? 2 : 0);
+  }
+  if (args.first == 'browse') {
+    await _cmdBrowse('redis-browse', args.sublist(1));
+    return;
   }
   String? db;
   String? workspace;
@@ -541,14 +550,23 @@ Future<void> _cmdRedis(List<String> args) async {
 
 /// `cockpit mongo --db <conn> --command '<json>'` — MongoDB (CLI-only). O
 /// comando é um documento runCommand (`{"find":"users","filter":{}}`).
+/// `cockpit mongo browse --db <conn> <collection> [--filter '<json>']` abre o
+/// collection browser no app (view pro humano — não devolve documentos).
 Future<void> _cmdMongo(List<String> args) async {
   if (args.isEmpty || args.first == '--help' || args.first == '-h') {
     stdout.writeln(
       "cockpit mongo --db <conn> --command '<json>'\n"
       "  e.g. cockpit mongo --db app --command '{\"find\":\"users\",\"filter\":{}}'\n"
-      '  The command is a MongoDB runCommand document. Output: one JSON line.',
+      '  The command is a MongoDB runCommand document. Output: one JSON line.\n'
+      "cockpit mongo browse --db <conn> <collection> [--filter '<json>']\n"
+      '  Opens the collection browser in the app, pre-filtered. Opens a '
+      'view — returns no documents.',
     );
     exit(args.isEmpty ? 2 : 0);
+  }
+  if (args.first == 'browse') {
+    await _cmdBrowse('mongo-browse', args.sublist(1));
+    return;
   }
   String? db;
   String? command;
@@ -576,6 +594,52 @@ Future<void> _cmdMongo(List<String> args) async {
     'command': command,
     'workspace': ?workspace,
   }, tabId);
+}
+
+/// `… browse` (plano 53): abre a view de browse no app. [wire] =
+/// `redis-browse` (`--pattern`) ou `mongo-browse` (positional `<collection>` +
+/// `--filter`).
+Future<void> _cmdBrowse(String wire, List<String> args) async {
+  String? db;
+  String? workspace;
+  String? tabId;
+  String? pattern;
+  String? filter;
+  final positionals = <String>[];
+  for (var i = 0; i < args.length; i++) {
+    final a = args[i];
+    String? take(String flag) {
+      if (a == flag) return ++i < args.length ? args[i] : null;
+      if (a.startsWith('$flag=')) return a.substring(flag.length + 1);
+      return null;
+    }
+
+    if (a == '--help' || a == '-h') {
+      stdout.writeln(
+        wire == 'redis-browse'
+            ? "cockpit redis browse --db <conn> [--pattern 'user:*']"
+            : "cockpit mongo browse --db <conn> <collection> "
+                  "[--filter '<json>']",
+      );
+      exit(0);
+    }
+    db = take('--db') ?? db;
+    workspace = take('--workspace') ?? workspace;
+    tabId = take('--tab-id') ?? tabId;
+    pattern = take('--pattern') ?? pattern;
+    filter = take('--filter') ?? filter;
+    if (!a.startsWith('--')) positionals.add(a);
+  }
+  if (db == null) _dbFail('error', 'missing --db <conn>');
+  final cmdArgs = <String, dynamic>{'db': db, 'workspace': ?workspace};
+  if (wire == 'mongo-browse') {
+    if (positionals.isEmpty) _dbFail('error', 'missing <collection>');
+    cmdArgs['collection'] = positionals.first;
+    if (filter != null) cmdArgs['filter'] = filter;
+  } else if (pattern != null) {
+    cmdArgs['pattern'] = pattern;
+  }
+  await _nosqlRequest(wire, cmdArgs, tabId);
 }
 
 /// Envia um comando NoSQL e imprime `{"ok": ...}` / `{"error": ...}`.
@@ -821,8 +885,8 @@ USAGE:
   cockpit list-workspaces [--json]             list workspaces (projects)
   cockpit list-tasks      [--json]             list this workspace's tasks (Task Run)
   cockpit db <list|schema|query|run|execute>   SQL databases (see `cockpit db --help`)
-  cockpit redis --db <conn> <CMD> [args...]    Redis/cache command (CLI-only)
-  cockpit mongo --db <conn> --command <json>   MongoDB runCommand (CLI-only)
+  cockpit redis [browse] --db <conn> ...       Redis command / open key table
+  cockpit mongo [browse] --db <conn> ...       MongoDB runCommand / open browser
   cockpit install-skill   [--force]            install the Claude Code skill
   cockpit --help | --version
 
@@ -939,13 +1003,42 @@ Cockpit tabs (it is not on the global PATH).
     should see the result too: the app shows it as a query tab and re-runs it
     every time you save the file.
   - Outside a Cockpit tab, add `--workspace <id|path>`.
-- `cockpit redis --db <conn> <CMD> [args...]` — Redis/cache command
-  (CLI-only; no UI tab). One JSON line reply. e.g.
-  `cockpit redis --db cache HGETALL user:42`. Covers Redis/Valkey/KeyDB.
-- `cockpit mongo --db <conn> --command '<json>'` — MongoDB runCommand
-  (CLI-only). The command is a runCommand document, e.g.
+- `cockpit redis --db <conn> <CMD> [args...]` — Redis/cache command. One
+  JSON line reply. e.g. `cockpit redis --db cache HGETALL user:42`. Covers
+  Redis/Valkey/KeyDB.
+- `cockpit mongo --db <conn> --command '<json>'` — MongoDB runCommand.
+  The command is a runCommand document, e.g.
   `cockpit mongo --db app --command '{"find":"users","filter":{"active":true}}'`.
   Output: one JSON line `{"ok": <reply>}` / `{"error":{kind,message}}`.
+  Documents use relaxed extended JSON (`{"$oid":…}`, `{"$date":…}`) both ways.
+- **Browse commands open a view for the human — they return no data.** Use
+  them to *show* what you found (after investigating with the commands above),
+  not to query:
+  - `cockpit redis browse --db <conn> [--pattern 'user:*']` — opens the
+    editable Redis key table, pre-filtered. On an already-open table the
+    pattern **replaces** the current filter.
+  - `cockpit mongo browse --db <conn> <collection> [--filter '<json>']` —
+    opens the Mongo collection browser (JSON document cards) pre-filtered.
+    The filter lands in the visible filter bar, editable by the human.
+- **Registering a connection** (`.cockpit/databases.json` at the workspace
+  root — the file behind `cockpit db list` and the Database panel):
+
+  ```json
+  {
+    "databases": [
+      {"name": "dev-local", "url": "sqlite:./app.db", "savePassword": false},
+      {"name": "app", "url": "postgres://user@localhost:5432/appdb", "savePassword": false},
+      {"name": "cache", "url": "redis://localhost:6379/0", "savePassword": false},
+      {"name": "docs", "url": "mongodb://localhost:27017/appdb", "savePassword": false}
+    ]
+  }
+  ```
+
+  The URL never carries the password — the human enters it in the Database
+  panel (stored in the OS keychain when `savePassword` is on). A personal,
+  gitignored overlay lives in `.cockpit/databases.local.json` (same shape,
+  merged on top by name). The panel picks up edits on reload; `cockpit db
+  list` confirms what's registered.
 - `cockpit read-tab [<label|tab-id>] [--lines N] [--offset N] [--from-start]`
   (alias: `read-pane`) — read a tab's **rendered output** as plain text (no
   ANSI escapes; covers TUIs on the alt-screen too). Without a target it reads
