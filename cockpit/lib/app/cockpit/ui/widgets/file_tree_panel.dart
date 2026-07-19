@@ -708,11 +708,14 @@ class _FileTreePanelState extends State<FileTreePanel> {
                     onTap: () => _headerCreate(true),
                   ),
                 ],
-                _HeaderIcon(
-                  icon: Icons.refresh,
-                  tooltip: 'Refresh',
-                  onTap: () => setState(() => _localRefresh++),
-                ),
+                // Refresh é da aba Files (relê a árvore) — nas outras abas ele
+                // não faz nada, então só aparece aqui (a Database tem o dela).
+                if (tab == _RightPaneTab.files)
+                  _HeaderIcon(
+                    icon: Icons.refresh,
+                    tooltip: 'Refresh',
+                    onTap: () => setState(() => _localRefresh++),
+                  ),
               ],
             ),
           ),

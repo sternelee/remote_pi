@@ -210,6 +210,14 @@ class CockpitViewModel extends ChangeNotifier {
   Timer? _gitWatchDebounce;
   String? _gitWatchPath;
 
+  /// Debounce próprio da árvore de arquivos: eventos **estruturais**
+  /// (create/delete/move) fora do `.git/` bumpam o [fileTreeRevision] pra
+  /// árvore reler as pastas abertas — cobre arquivos criados/removidos por
+  /// fora (Finder, agente, scripts) sem exigir Refresh manual. Separado do
+  /// [_gitWatchDebounce] pra um modify (que não muda a árvore) não segurar
+  /// o bump nem vice-versa.
+  Timer? _fileTreeWatchDebounce;
+
   /// Poll de segurança do git. O `_gitWatch` só cobre o projeto **selecionado**
   /// e o `Directory.watch(recursive:)` do macOS coalesce/perde eventos (e forks
   /// de worktree, cujo `index`/`HEAD` moram fora do working tree, nem sempre
@@ -3716,6 +3724,16 @@ class CockpitViewModel extends ChangeNotifier {
     if (gitIdx != -1) {
       final rest = p.substring(gitIdx + 6); // depois de '/.git/'
       if (rest != 'HEAD' && rest != 'index') return;
+    } else if (event.type == FileSystemEvent.create ||
+        event.type == FileSystemEvent.delete ||
+        event.type == FileSystemEvent.move) {
+      // Mudança estrutural no working tree → árvore de arquivos relê as
+      // pastas abertas (modify não muda a estrutura, só o conteúdo).
+      _fileTreeWatchDebounce?.cancel();
+      _fileTreeWatchDebounce = Timer(
+        const Duration(milliseconds: 400),
+        _bumpFileTree,
+      );
     }
     _gitWatchDebounce?.cancel();
     _gitWatchDebounce = Timer(const Duration(milliseconds: 400), () {
@@ -3834,6 +3852,7 @@ class CockpitViewModel extends ChangeNotifier {
     unawaited(_statusServer.stop());
     _gitWatch?.cancel();
     _gitWatchDebounce?.cancel();
+    _fileTreeWatchDebounce?.cancel();
     _gitPoll?.cancel();
     for (final t in _saveTimers.values) {
       t.cancel();
