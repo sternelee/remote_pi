@@ -1631,7 +1631,9 @@ class CockpitViewModel extends ChangeNotifier {
         // nova, sessões do zero — ver _cloneLayoutForWorktree).
         final clonedLayout = _cloneLayoutForWorktree(layoutSourceId ?? rootId);
         await _refreshWorktrees(rootId); // insere o fork em _projectList
-        final fork = _projectById(value.path);
+        // Id de fork é namespaced pela raiz (ver _refreshWorktrees) — o path
+        // cru deixou de ser o id na migração dos Realms.
+        final fork = _projectById('$rootId::${value.path}');
         if (fork == null) {
           return const Failure(
             WorktreeOpError(
