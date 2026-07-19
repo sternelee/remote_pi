@@ -9,7 +9,7 @@ import 'package:cockpit/app/core/utils/login_shell.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_runner_gateway.dart';
 import 'package:cockpit/app/cockpit/domain/entities/task_definition.dart';
 import 'package:cockpit/app/cockpit/domain/entities/task_run.dart';
-import 'package:kyroon_pty/kyroon_pty.dart';
+import 'package:cockpit_pty/cockpit_pty.dart';
 
 /// Executor de tasks num PTY nativo (`kyroon_pty`). Roda cada task via **login
 /// shell** (o shell de login do usuário + `-ilc "<cmd>"`, ver [resolveLoginShell])

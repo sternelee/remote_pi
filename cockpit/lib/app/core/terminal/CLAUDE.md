@@ -17,4 +17,8 @@ Tudo de terminal num lugar só:
 Testes do emulador: `test/core/terminal/xterm/` (suíte do upstream adaptada;
 2 casos de `getText()` com wrap já falhavam no fork e estão `skip: true`).
 
-O PTY (nativo) continua fora: `kyroon_pty` (fork git com PR aberto upstream).
+O PTY (nativo, C/FFI) também é nosso: **`plugins/cockpit_pty/`** — absorvido
+2026-07-19 do fork `jacobaraujo7/kyroon_pty` v1.0.6 (upstream
+cesarmod2017/kyroon_pty, MIT preservado), renomeado `kyroon_pty`→`cockpit_pty`
+(package, podspecs, CMake, dylib) e usado via path dependency. Não publicado;
+manutenção é nossa. Zero `dependency_overrides` git restantes no pubspec.

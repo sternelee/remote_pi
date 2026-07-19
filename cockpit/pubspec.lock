@@ -193,6 +193,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.2"
+  cockpit_pty:
+    dependency: "direct main"
+    description:
+      path: "plugins/cockpit_pty"
+      relative: true
+    source: path
+    version: "1.0.6"
   code_assets:
     dependency: transitive
     description:
@@ -629,15 +636,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.12.0"
-  kyroon_pty:
-    dependency: "direct main"
-    description:
-      path: "."
-      ref: "v1.0.6"
-      resolved-ref: bd775273c7d3ce6be94550950c83d2d7b8246e0e
-      url: "https://github.com/jacobaraujo7/kyroon_pty"
-    source: git
-    version: "1.0.6"
   leak_tracker:
     dependency: transitive
     description:
