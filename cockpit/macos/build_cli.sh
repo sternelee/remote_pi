@@ -63,3 +63,25 @@ else
     -s "$IDENTITY" "$DEST"
 fi
 echo "[build_cli] bundle OK -> $DEST"
+
+# ── Dylibs do anakiORM (plano 51) ─────────────────────────────────────────────
+# O loader do anaki procura primeiro ao lado do executável
+# (Contents/MacOS/libanaki_<engine>.dylib). Staging local: ~/.cockpit/anaki/
+# (buildados do repo do anakiORM: cargo build --release --features <engine>).
+# Sem staging = aviso, não erro (máquina sem os drivers de banco compila).
+ANAKI_SRC="$HOME/.cockpit/anaki"
+ANAKI_DEST="$BUILT_PRODUCTS_DIR/$PRODUCT_NAME.app/Contents/MacOS"
+for engine in sqlite postgres mysql; do
+  lib="libanaki_$engine.dylib"
+  if [ -f "$ANAKI_SRC/$lib" ]; then
+    cp "$ANAKI_SRC/$lib" "$ANAKI_DEST/$lib"
+    if [ -z "$IDENTITY" ] || [ "$IDENTITY" = "-" ]; then
+      codesign --force -s - "$ANAKI_DEST/$lib"
+    else
+      codesign --force --options runtime -s "$IDENTITY" "$ANAKI_DEST/$lib"
+    fi
+    echo "[build_cli] anaki $lib -> Contents/MacOS (assinado)"
+  else
+    echo "[build_cli] aviso: $ANAKI_SRC/$lib ausente — engine $engine sem driver"
+  fi
+done

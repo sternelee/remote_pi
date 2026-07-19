@@ -18,6 +18,7 @@ import 'package:cockpit/app/core/ui/widgets/app_menu.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/confirm_dialog.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/empty_pane.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/diff_viewer.dart';
+import 'package:cockpit/app/cockpit/ui/widgets/db_query_view.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/file_viewer.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/terminal_pane.dart';
 import 'package:cockpit/app/core/ui/file_icons/file_icons.dart';
@@ -1225,6 +1226,20 @@ class _PaneBodyState extends State<_PaneBody> {
     // Viewer de diff (read-only, split): comparação com o HEAD do git.
     if (item is DiffViewerSession) {
       return DiffViewer(session: item);
+    }
+
+    // Tab de query `.dbq` (plano 51): editor SQL + grid de resultado. Reusa a
+    // FileViewerSession (preview/dirty/watch/persistência de graça); só o
+    // render diverge.
+    if (item is FileViewerSession && item.path.toLowerCase().endsWith('.dbq')) {
+      final vm = context.read<CockpitViewModel>();
+      return DbQueryView(
+        session: item,
+        active: widget.active,
+        focused: widget.focused,
+        workspaceRoot: vm.projectRootOf(item.projectId) ?? '',
+        onSave: (content) => vm.saveFile(item.id, content),
+      );
     }
 
     // Viewer de arquivo (read-only): markdown / texto / imagem.

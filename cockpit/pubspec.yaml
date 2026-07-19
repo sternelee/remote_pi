@@ -52,6 +52,10 @@ dependencies:
   # Plano 37 — seleção de pasta (NSOpenPanel no macOS) para abrir um projeto.
   file_picker: ^8.1.2
 
+  # Plano 51 — senha de conexão no cofre nativo do SO (Keychain / Credential
+  # Manager / Secret Service). Nunca em .cockpit/databases.json.
+  flutter_secure_storage: ^9.0.0
+
   # Wave 2 — persistência local dos projetos (pasta salva = projeto).
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -131,6 +135,15 @@ dependencies:
   # de notify+download manual (UpdateChecker/UpdateCard) assume. O macOS embarca
   # o Sparkle.framework via CocoaPods; o Windows vendoriza a WinSparkle.dll.
   auto_updater: ^1.0.0
+
+  # Plano 51 — drivers de banco da DB tab via anakiORM (conectores Rust/FFI;
+  # SQLite + Postgres + MySQL, MSSGL futuro). A FFI bloqueia → roda em Isolate
+  # (AnakiDbDriver). Dylibs buildados do rust/ do repo e copiados pro bundle
+  # pelo macos/build_cli.sh (dev: ~/.cockpit/anaki). Panic-safety ok (#2).
+  anaki_orm: ^0.1.0
+  anaki_sqlite: ^0.1.0
+  anaki_postgres: ^0.1.0
+  anaki_mysql: ^0.1.0
 
 dependency_overrides:
   # Fork do xterm, por dois motivos:

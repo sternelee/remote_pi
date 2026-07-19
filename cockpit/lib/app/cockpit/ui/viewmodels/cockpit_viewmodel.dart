@@ -7,12 +7,17 @@ import 'dart:io'
         FileSystemEntity,
         FileSystemEntityType,
         FileSystemEvent,
+        FileSystemException,
         Platform;
 import 'dart:math' show max;
 
 import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
 
 import 'package:cockpit/app/cockpit/domain/contracts/app_launcher.dart';
+import 'package:cockpit/app/cockpit/domain/entities/db_result.dart';
+import 'package:cockpit/app/cockpit/domain/entities/dbq_document.dart';
+import 'package:cockpit/app/cockpit/domain/entities/sql_statements.dart';
+import 'package:cockpit/app/cockpit/domain/services/db_query_service.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/content_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_searcher.dart';
@@ -102,6 +107,7 @@ class CockpitViewModel extends ChangeNotifier {
     this._realmRepo,
     this._taskDiscovery,
     this._taskRunner,
+    this._dbService,
   );
 
   final ProjectRepository _projects;
@@ -111,6 +117,10 @@ class CockpitViewModel extends ChangeNotifier {
   /// interna (mesmos binds do painel Tasks → mesma lista que a UI mostra).
   final TaskDiscovery _taskDiscovery;
   final TaskRunnerGateway _taskRunner;
+
+  /// Motor de queries da DB tab — compartilhado com a CLI `cockpit db`
+  /// (plano 51): mesma resolução de conexão/senha, mesma serialização.
+  final DbQueryService _dbService;
   final RpcGatewayFactory _factory;
   final FolderLister _folders;
   final SessionHistory _history;
@@ -2414,6 +2424,11 @@ class CockpitViewModel extends ChangeNotifier {
   }
 
   // ---- helpers --------------------------------------------------------------
+
+  /// Raiz (path) do workspace [projectId] — usada pela tab `.dbq` pra
+  /// resolver conexões/paths relativos (plano 51).
+  String? projectRootOf(String projectId) => _projectById(projectId)?.path;
+
   Project? _projectById(String? id) {
     for (final project in _projectList) {
       if (project.id == id) return project;
@@ -2826,8 +2841,129 @@ class CockpitViewModel extends ChangeNotifier {
         }
         return CockpitCommandResult.ok(readTerminalWindow(term, c.args));
 
+      // ── `cockpit db …` (plano 51) — acesso a banco pros agentes. A CLI é
+      // cliente magro: quem executa é o app (mesmo motor da tab `.dbq`), e a
+      // credencial nunca sai daqui. Workspace do pane emissor; `--workspace
+      // <id|path>` pra uso fora de pane. Erros de banco voltam como
+      // `<kind>: <message>` (a CLI reconstrói o JSON `{"error":{…}}`).
+      case 'db-list':
+        return _dbCommand(c, (project) async {
+          final conns = await _dbService.connections(project.path);
+          return CockpitCommandResult.ok([
+            for (final conn in conns)
+              {
+                'name': conn.name,
+                'engine': conn.engine.label,
+                'target': conn.displayTarget,
+                'origin': conn.origin.name,
+              },
+          ]);
+        });
+
+      case 'db-schema':
+        return _dbCommand(c, (project) async {
+          final table = (c.args['table'] ?? '').toString();
+          final result = await _dbService.schema(
+            workspaceRoot: project.path,
+            workspaceId: project.id,
+            connName: (c.args['db'] ?? '').toString(),
+            table: table.isEmpty ? null : table,
+          );
+          return CockpitCommandResult.ok(result.toJson());
+        });
+
+      case 'db-query':
+      case 'db-execute':
+        return _dbCommand(c, (project) async {
+          final result = await _dbService.query(
+            workspaceRoot: project.path,
+            workspaceId: project.id,
+            connName: (c.args['db'] ?? '').toString(),
+            sql: (c.args['sql'] ?? '').toString(),
+            limit: int.tryParse('${c.args['limit'] ?? ''}'),
+            dml: c.cmd == 'db-execute',
+          );
+          return CockpitCommandResult.ok(result.toJson());
+        });
+
+      // `cockpit db run <file.dbq>` — executa o arquivo (frontmatter decide
+      // conexão e limite). O path chega absoluto (a CLI resolve contra o cwd).
+      case 'db-run':
+        return _dbCommand(c, (project) async {
+          final path = (c.args['path'] ?? '').toString();
+          if (path.isEmpty) {
+            return const CockpitCommandResult.fail('missing .dbq path');
+          }
+          final String content;
+          try {
+            content = await File(path).readAsString();
+          } on FileSystemException catch (e) {
+            return CockpitCommandResult.fail(
+              'cannot read "$path": ${e.message}',
+            );
+          }
+          final doc = DbqDocument.parse(content);
+          if (doc.db == null) {
+            return CockpitCommandResult.fail(
+              'unknown_connection: "$path" has no "-- db:" frontmatter — '
+              'pick a database in the Cockpit tab or add the line manually',
+            );
+          }
+          // Mesma semântica de script da tab: statements em sequência,
+          // resultado do último.
+          final result = await _dbService.runStatements(
+            workspaceRoot: project.path,
+            workspaceId: project.id,
+            connName: doc.db!,
+            statements: [for (final st in splitSqlStatements(doc.sql)) st.text],
+            limit: doc.limit,
+          );
+          return CockpitCommandResult.ok(result.toJson());
+        });
+
       default:
         return CockpitCommandResult.fail('unknown command: "${c.cmd}"');
+    }
+  }
+
+  /// Molde dos comandos `db-*`: resolve o workspace (decisão K do plano 51 —
+  /// `--workspace <id|path>` > pane emissor > erro, **nunca** cwd nem chute) e
+  /// converte [DbQueryException] em `fail("<kind>: <mensagem>")`.
+  Future<CockpitCommandResult> _dbCommand(
+    CockpitCommand c,
+    Future<CockpitCommandResult> Function(Project project) action,
+  ) async {
+    Project? project;
+    final ws = (c.args['workspace'] ?? '').toString();
+    if (ws.isNotEmpty) {
+      for (final p in _projectList) {
+        if (p.id == ws || p.path == ws) {
+          project = p;
+          break;
+        }
+      }
+      if (project == null) {
+        return CockpitCommandResult.fail('no workspace matches "$ws"');
+      }
+    } else {
+      final sender = c.tabId == null ? null : _sessions[c.tabId];
+      project = sender == null ? null : _projectById(sender.projectId);
+      if (project == null) {
+        return const CockpitCommandResult.fail(
+          'not inside a Cockpit pane — pass --workspace <id|path> '
+          '(see `cockpit list-workspaces`)',
+        );
+      }
+    }
+    if (project.isSystemTerminal || project.path.isEmpty) {
+      return const CockpitCommandResult.fail(
+        'this pane has no workspace folder',
+      );
+    }
+    try {
+      return await action(project);
+    } on DbQueryException catch (e) {
+      return CockpitCommandResult.fail('${e.kind}: ${e.message}');
     }
   }
 

@@ -66,6 +66,7 @@ class FileTreePanel extends StatefulWidget {
     this.width = 300,
     this.footer,
     this.searchPanel,
+    this.databasePanel,
     this.searchFocusSignal,
     this.tasksPanel,
     this.roots = const <WorkspaceRoot>[],
@@ -114,6 +115,10 @@ class FileTreePanel extends StatefulWidget {
   /// Subpane de Tasks (executor de build/dev), fixado entre o [searchPanel] e
   /// o [footer]. Null = sem projeto selecionado.
   final Widget? tasksPanel;
+
+  /// Painel de conexões de banco (aba Database, plano 51). Null = sem projeto
+  /// (a aba nem aparece no header).
+  final Widget? databasePanel;
 
   /// Painel de busca por conteúdo, fixado entre a árvore e o [footer]
   /// (Cmd+Shift+F). `null` quando não há projeto.
@@ -188,9 +193,10 @@ class FileTreePanel extends StatefulWidget {
   State<FileTreePanel> createState() => _FileTreePanelState();
 }
 
-/// Aba ativa do painel direito: árvore de arquivos, busca por conteúdo ou
-/// source control. Ordem visual no header: Files · Search · Source Control.
-enum _RightPaneTab { files, search, sourceControl }
+/// Aba ativa do painel direito: árvore de arquivos, busca por conteúdo,
+/// source control ou conexões de banco (plano 51). Ordem visual no header:
+/// Files · Search · Source Control · Database.
+enum _RightPaneTab { files, search, sourceControl, database }
 
 /// Intenção de criação inline pendente: dentro de [parentPath], arquivo ou pasta.
 class _PendingCreate {
@@ -616,8 +622,13 @@ class _FileTreePanelState extends State<FileTreePanel> {
     if (tab == _RightPaneTab.search && !hasSearch) {
       tab = _RightPaneTab.files;
     }
+    final hasDatabase = widget.databasePanel != null;
+    if (tab == _RightPaneTab.database && !hasDatabase) {
+      tab = _RightPaneTab.files;
+    }
     final scMode = tab == _RightPaneTab.sourceControl;
     final searchMode = tab == _RightPaneTab.search;
+    final dbMode = tab == _RightPaneTab.database;
 
     return Container(
       width: widget.width,
@@ -656,6 +667,14 @@ class _FileTreePanelState extends State<FileTreePanel> {
                     selected: scMode,
                     onTap: () =>
                         setState(() => _tab = _RightPaneTab.sourceControl),
+                  ),
+                if (hasDatabase)
+                  _HeaderIcon(
+                    key: const ValueKey('database-tab'),
+                    icon: Icons.storage,
+                    tooltip: 'Database',
+                    selected: dbMode,
+                    onTap: () => setState(() => _tab = _RightPaneTab.database),
                   ),
                 const Spacer(),
                 if (scMode)
@@ -708,6 +727,8 @@ class _FileTreePanelState extends State<FileTreePanel> {
                   )
                 : searchMode
                 ? (widget.searchPanel ?? const SizedBox.shrink())
+                : dbMode
+                ? (widget.databasePanel ?? const SizedBox.shrink())
                 : scMode
                 ? _ChangedTree(
                     rootPath: widget.rootPath,

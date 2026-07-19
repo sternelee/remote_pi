@@ -958,6 +958,12 @@ class _CockpitPageState extends State<CockpitPage> {
                                     focusSignal: _searchFocusSignal,
                                   ),
                             searchFocusSignal: _searchFocusSignal,
+                            databasePanel: vm.selectedProject == null
+                                ? null
+                                : DbPanel(
+                                    workspaceId: vm.selectedProject!.id,
+                                    workspaceRoot: vm.selectedProject!.path,
+                                  ),
                             tasksPanel: vm.selectedProject == null
                                 ? null
                                 : TasksPanel(

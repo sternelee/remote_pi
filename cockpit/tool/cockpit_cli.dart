@@ -83,6 +83,8 @@ Future<void> main(List<String> argv) async {
       await _cmdRead('read-pane', args);
     case 'read-task':
       await _cmdRead('read-task', args);
+    case 'db':
+      await _cmdDb(args);
     case 'install-skill':
       await _cmdInstallSkill(args);
     default:
@@ -298,7 +300,10 @@ Future<void> _cmdRead(String cmd, List<String> args) async {
 
 // ---- transporte (socket) ----------------------------------------------------
 
-Future<Map<String, dynamic>> _request(Map<String, dynamic> req) async {
+Future<Map<String, dynamic>> _request(
+  Map<String, dynamic> req, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
   final env = Platform.environment;
   final sock = env['COCKPIT_STATUS_SOCK'];
   final port = int.tryParse(env['COCKPIT_STATUS_PORT'] ?? '');
@@ -333,7 +338,7 @@ Future<Map<String, dynamic>> _request(Map<String, dynamic> req) async {
       .transform(utf8.decoder)
       .join()
       .timeout(
-        const Duration(seconds: 10),
+        timeout,
         onTimeout: () {
           socket.destroy();
           return '';
@@ -352,6 +357,183 @@ Future<Map<String, dynamic>> _request(Map<String, dynamic> req) async {
   } catch (_) {
     return <String, dynamic>{'ok': false, 'error': 'resposta malformada'};
   }
+}
+
+// ---- db (plano 51) ----------------------------------------------------------
+
+/// Kinds estáveis que o app devolve prefixados em `fail("<kind>: <msg>")` —
+/// reconstruímos o JSON `{"error":{kind,message}}` do contrato da CLI.
+const _dbErrorKinds = {
+  'connection_failed',
+  'query_failed',
+  'timeout',
+  'unsupported_engine',
+  'unknown_connection',
+  'password_required',
+};
+
+/// `cockpit db <list|schema|query|run|execute>` — database access for agents.
+/// Saída é SEMPRE uma linha JSON: `{"ok": …}` ou `{"error":{kind,message}}`
+/// (exit 1). Quem executa é o app (mesmo motor da tab `.dbq`); a credencial
+/// nunca passa por aqui. Workspace = pane atual, ou `--workspace <id|path>`.
+Future<void> _cmdDb(List<String> args) async {
+  if (args.isEmpty || args.first == '--help' || args.first == '-h') {
+    _printDbHelp(args.isEmpty ? stderr : stdout);
+    exit(args.isEmpty ? 2 : 0);
+  }
+  final sub = args.removeAt(0);
+
+  String? db;
+  String? sql;
+  String? limit;
+  String? table;
+  String? workspace;
+  String? tabId;
+  final positionals = <String>[];
+  String? pending;
+  for (final a in args) {
+    if (pending != null) {
+      switch (pending) {
+        case '--db':
+          db = a;
+        case '--sql':
+          sql = a;
+        case '--limit':
+          limit = a;
+        case '--table':
+          table = a;
+        case '--workspace':
+          workspace = a;
+        case '--tab-id':
+          tabId = a;
+      }
+      pending = null;
+      continue;
+    }
+    if (const {
+      '--db',
+      '--sql',
+      '--limit',
+      '--table',
+      '--workspace',
+      '--tab-id',
+    }.contains(a)) {
+      pending = a;
+      continue;
+    }
+    final eq = a.indexOf('=');
+    if (a.startsWith('--') && eq > 0) {
+      final key = a.substring(0, eq);
+      final value = a.substring(eq + 1);
+      switch (key) {
+        case '--db':
+          db = value;
+        case '--sql':
+          sql = value;
+        case '--limit':
+          limit = value;
+        case '--table':
+          table = value;
+        case '--workspace':
+          workspace = value;
+        case '--tab-id':
+          tabId = value;
+        default:
+          _dbFail('error', 'unknown flag "$key" (see `cockpit db --help`)');
+      }
+      continue;
+    }
+    positionals.add(a);
+  }
+  if (pending != null) _dbFail('error', 'missing value for $pending');
+
+  final cmdArgs = <String, dynamic>{'workspace': ?workspace};
+  final String wire;
+  switch (sub) {
+    case 'list':
+      wire = 'db-list';
+    case 'schema':
+      wire = 'db-schema';
+      if (db == null) _dbFail('error', 'missing --db <name>');
+      cmdArgs['db'] = db;
+      final t = table ?? (positionals.isEmpty ? null : positionals.first);
+      if (t != null) cmdArgs['table'] = t;
+    case 'query':
+    case 'execute':
+      wire = sub == 'query' ? 'db-query' : 'db-execute';
+      if (db == null) _dbFail('error', 'missing --db <name>');
+      final statement = sql ?? positionals.join(' ');
+      if (statement.trim().isEmpty) {
+        _dbFail('error', 'missing --sql "<statement>"');
+      }
+      cmdArgs['db'] = db;
+      cmdArgs['sql'] = statement;
+      if (limit != null) cmdArgs['limit'] = limit;
+    case 'run':
+      wire = 'db-run';
+      if (positionals.isEmpty) _dbFail('error', 'missing <file.dbq>');
+      cmdArgs['path'] = _resolvePath(positionals.first);
+    default:
+      _dbFail('error', 'unknown subcommand "$sub" (see `cockpit db --help`)');
+  }
+
+  final req = <String, dynamic>{'cmd': wire, 'args': cmdArgs};
+  final tid = tabId ?? _selfTabId();
+  if (tid != null && tid.isNotEmpty) req['tabId'] = tid;
+  // Timeout folgado: o app corta a query em 30s; a folga cobre fila + IO.
+  final resp = await _request(req, timeout: const Duration(seconds: 60));
+  if (resp['ok'] == true) {
+    stdout.writeln(jsonEncode({'ok': resp['data']}));
+    exit(0);
+  }
+  final raw = (resp['error'] ?? 'failed').toString();
+  final sep = raw.indexOf(': ');
+  final kind = sep > 0 ? raw.substring(0, sep) : '';
+  if (_dbErrorKinds.contains(kind)) {
+    _dbFail(kind, raw.substring(sep + 2));
+  }
+  _dbFail('error', raw);
+}
+
+Never _dbFail(String kind, String message) {
+  stdout.writeln(
+    jsonEncode({
+      'error': {'kind': kind, 'message': message},
+    }),
+  );
+  exit(1);
+}
+
+void _printDbHelp(IOSink out) {
+  out.writeln(
+    r'''cockpit db — query the workspace's databases (agent-friendly JSON)
+
+Connections are registered per workspace in .cockpit/databases.json (Database
+panel in the app); SQLite files found in the repo are auto-detected. The app
+executes every statement — credentials never reach this CLI.
+
+USAGE:
+  cockpit db list                                  registered + detected connections
+  cockpit db schema  --db <name> [<table>]         tables, or a table's columns
+  cockpit db query   --db <name> --sql "<SELECT…>" [--limit N]   run a query
+  cockpit db execute --db <name> --sql "<DML…>"    run DML, returns affectedRows
+  cockpit db run <file.dbq>                        run a .dbq file (frontmatter picks the db)
+
+FLAGS:
+  --workspace <id|path>   target workspace when not inside a Cockpit pane
+  --limit N               row cap for query (default 200; "truncated" flags the cut)
+
+OUTPUT (single JSON line; exit 1 on error):
+  {"ok":{"columns":[{"name","type"}],"rows":[[…]],"rowCount":N,"truncated":false,"elapsedMs":12}}
+  {"error":{"kind":"unknown_connection","message":"…"}}
+
+.dbq FILES:
+  SQL with comment frontmatter — agents write them, the app renders them as a
+  query tab (editor + result grid) and re-runs on save:
+    -- db: dev-local
+    -- limit: 100
+    SELECT * FROM orders ORDER BY created_at DESC;''',
+  );
 }
 
 // ---- teclas nomeadas --------------------------------------------------------
@@ -532,6 +714,7 @@ USAGE:
   cockpit list-tabs       [--json]             list active tabs (alias: list-panes)
   cockpit list-workspaces [--json]             list workspaces (projects)
   cockpit list-tasks      [--json]             list this workspace's tasks (Task Run)
+  cockpit db <list|schema|query|run|execute>   workspace databases (see `cockpit db --help`)
   cockpit install-skill   [--force]            install the Claude Code skill
   cockpit --help | --version
 
@@ -549,6 +732,15 @@ TASKS (list-tasks / read-task):
   `cockpit list-tasks` — `[output]` marks tasks whose output `read-task` can
   read (ran this boot); ● marks tasks running right now. Task-output tabs in
   `list-tabs --json` also carry the task id as `taskId`.
+
+DATABASES (db):
+  Connections live per workspace in .cockpit/databases.json (+ auto-detected
+  SQLite files). Output is one JSON line — made for agents. Examples:
+    cockpit db list
+    cockpit db schema --db dev-local orders
+    cockpit db query --db dev-local --sql "SELECT * FROM orders LIMIT 5"
+    cockpit db run reports/daily.dbq
+  Full reference: `cockpit db --help`.
 
 IDS:
   Workspace ids are opaque UUIDs — use `workspacePath` (list-tabs) / `path`
@@ -594,7 +786,7 @@ String _basename(String path) {
 
 const String _skillMarkdown = r'''---
 name: cockpit-cli
-description: Drive Cockpit's multiplexed terminals from inside a tab. Use when you (an agent running in a Cockpit terminal) need to type text or press keys into your own or another tab, read another tab's or a task's output, or list the open tabs/workspaces/tasks. Triggers on tmux-like control needs: send-keys, run a command in another tab, read a tab's scrollback, inspect a task run's output, discover tab or task ids.
+description: Drive Cockpit's multiplexed terminals from inside a tab. Use when you (an agent running in a Cockpit terminal) need to type text or press keys into your own or another tab, read another tab's or a task's output, list the open tabs/workspaces/tasks, or query the workspace's databases (SQL over registered connections / .dbq files). Triggers on tmux-like control needs — send-keys, run a command in another tab, read a tab's scrollback, inspect a task run's output, discover tab or task ids — and on database needs: run a SQL query, inspect a schema, list connections, execute a .dbq file.
 ---
 
 # cockpit — Cockpit's internal CLI
@@ -620,6 +812,25 @@ Cockpit tabs (it is not on the global PATH).
   (tab next to the terminal). `cockpit <file>` is the shortcut. The path is
   resolved against the tab cwd (relative, `~` and absolute all work). Any type
   opens as text — including extensionless ones (`.zprofile`, `Makefile`).
+- `cockpit db <list|schema|query|run|execute>` — query the workspace's
+  databases. Connections are registered in `.cockpit/databases.json` (Database
+  panel); SQLite files in the repo are auto-detected. Output is **one JSON
+  line**: `{"ok":{columns,rows,rowCount,truncated,elapsedMs}}` or
+  `{"error":{kind,message}}` (exit 1). The app executes everything — you never
+  see credentials. Examples:
+  - `cockpit db list` — available connections (name, engine, target).
+  - `cockpit db schema --db dev-local` / `… --db dev-local orders` — tables /
+    columns of a table.
+  - `cockpit db query --db dev-local --sql "SELECT …" [--limit N]` — rows are
+    arrays (column order matches `columns`); `truncated: true` means the limit
+    cut the cursor — raise `--limit` if you need more.
+  - `cockpit db execute --db dev-local --sql "UPDATE …"` — returns
+    `affectedRows`.
+  - `cockpit db run <file.dbq>` — runs a `.dbq` file (SQL with `-- db:` /
+    `-- limit:` comment frontmatter). Prefer writing a `.dbq` when the human
+    should see the result too: the app shows it as a query tab and re-runs it
+    every time you save the file.
+  - Outside a Cockpit tab, add `--workspace <id|path>`.
 - `cockpit read-tab [<label|tab-id>] [--lines N] [--offset N] [--from-start]`
   (alias: `read-pane`) — read a tab's **rendered output** as plain text (no
   ANSI escapes; covers TUIs on the alt-screen too). Without a target it reads
