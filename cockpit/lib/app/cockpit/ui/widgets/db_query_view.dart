@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cockpit/app/cockpit/domain/entities/db_connection.dart';
@@ -11,9 +12,11 @@ import 'package:cockpit/app/core/ui/menu/editor_menu_bridge.dart';
 import 'package:cockpit/app/core/ui/themes/themes.dart';
 import 'package:cockpit/app/core/ui/widgets/app_menu.dart';
 import 'package:cockpit/app/core/ui/widgets/code_editing_controller.dart';
+import 'package:cockpit/app/core/ui/widgets/code_highlight.dart';
 import 'package:cockpit/app/cockpit/ui/widgets/code_editor.dart';
 import 'package:cockpit/app/core/ui/widgets/hover_tap.dart';
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, LogicalKeyboardKey;
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:shadcn_flutter/shadcn_flutter.dart';
 
@@ -499,6 +502,7 @@ class _DbQueryViewState extends State<DbQueryView> {
         ),
       );
     }
+    if (_view.asJson) return _JsonView(result: result);
     return _DbGrid(
       result: result,
       baseWidths: _view.baseWidths,
@@ -539,6 +543,21 @@ class _DbQueryViewState extends State<DbQueryView> {
             style: typo.label.copyWith(fontSize: 10.5, color: colors.text3),
           ),
           const Spacer(),
+          // Toggle Table / JSON (JSON é selecionável/copiável). Estado por tab,
+          // fora do frontmatter.
+          if (result != null && result.affectedRows == null) ...[
+            _ViewToggle(
+              label: 'Table',
+              active: !_view.asJson,
+              onTap: () => setState(() => _view.asJson = false),
+            ),
+            _ViewToggle(
+              label: 'JSON',
+              active: _view.asJson,
+              onTap: () => setState(() => _view.asJson = true),
+            ),
+            const SizedBox(width: 10),
+          ],
           Text(
             _dirty ? 'unsaved' : 'saved',
             style: typo.label.copyWith(
@@ -570,6 +589,184 @@ class _DbQueryViewState extends State<DbQueryView> {
     Uint8List() => 'blob ${v.length} B',
     _ => v.toString(),
   };
+}
+
+/// Botão compacto do toggle Table/JSON no rodapé.
+class _ViewToggle extends StatelessWidget {
+  const _ViewToggle({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return HoverTap(
+      onTap: onTap,
+      color: active ? colors.panel3 : null,
+      borderRadius: const BorderRadius.all(Radius.circular(4)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Text(
+        label,
+        style: context.typo.label.copyWith(
+          fontSize: 10.5,
+          color: active ? colors.text : colors.text4,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────── json ──
+
+/// Resultado como JSON (lista de objetos coluna→valor), selecionável e
+/// copiável. BLOB vira `<blob N bytes>`, DateTime ISO-8601.
+class _JsonView extends StatelessWidget {
+  const _JsonView({required this.result});
+
+  final DbResult result;
+
+  /// Preview cap: acima disso o `SelectableText` único (não virtualizado)
+  /// pesa. O preview mostra as primeiras [_previewRows]; **Copy leva tudo**.
+  static const _previewRows = 500;
+
+  bool get _capped => result.rows.length > _previewRows;
+
+  String _buildJson(List<List<Object?>> rows) {
+    final names = [for (final c in result.columns) c.name];
+    final list = [
+      for (final row in rows)
+        {
+          for (var i = 0; i < names.length; i++) names[i]: _jsonCell(row[i]),
+        },
+    ];
+    return const JsonEncoder.withIndent('  ').convert(list);
+  }
+
+  /// JSON exibido (cortado no preview) e JSON completo (pro Copy).
+  String get _previewJson =>
+      _buildJson(_capped ? result.rows.take(_previewRows).toList() : result.rows);
+  String get _fullJson => _capped ? _buildJson(result.rows) : _previewJson;
+
+  static Object? _jsonCell(Object? v) => switch (v) {
+    null || int() || double() || bool() || String() => v,
+    DateTime() => v.toIso8601String(),
+    Uint8List() => '<blob ${v.length} bytes>',
+    _ => v.toString(),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final json = _previewJson;
+    final style = context.typo.mono.copyWith(
+      fontSize: 12,
+      height: 1.45,
+      color: colors.text2,
+    );
+    // Highlight de JSON via o mesmo highlighter do editor; null (grande
+    // demais) cai no texto puro.
+    final span = buildCodeSpan(
+      context,
+      source: json,
+      language: 'json',
+      baseStyle: style,
+    );
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_capped)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  color: colors.panel2,
+                  child: Text(
+                    'Preview limited to the first $_previewRows of '
+                    '${result.rows.length} rows — use Copy for the full JSON.',
+                    style: context.typo.label.copyWith(
+                      fontSize: 10.5,
+                      color: colors.text3,
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: span == null
+                      ? SelectableText(json, style: style)
+                      : SelectableText.rich(span, style: style),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: 6,
+          right: 14,
+          child: _CopyButton(text: _fullJson),
+        ),
+      ],
+    );
+  }
+}
+
+class _CopyButton extends StatefulWidget {
+  const _CopyButton({required this.text});
+  final String text;
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return HoverTap(
+      onTap: () async {
+        await Clipboard.setData(ClipboardData(text: widget.text));
+        if (!mounted) return;
+        setState(() => _copied = true);
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted) setState(() => _copied = false);
+        });
+      },
+      color: colors.panel2,
+      border: Border.all(color: colors.border),
+      borderRadius: const BorderRadius.all(Radius.circular(5)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _copied ? Icons.check : Icons.copy,
+            size: 12,
+            color: _copied ? colors.online : colors.text3,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            _copied ? 'Copied' : 'Copy',
+            style: context.typo.label.copyWith(
+              fontSize: 10.5,
+              color: colors.text3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────── grid ──

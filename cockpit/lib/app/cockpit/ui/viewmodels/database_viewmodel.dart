@@ -15,6 +15,10 @@ class DbTabViewState {
   List<double> baseWidths = const [];
   List<double>? manualWidths;
   int? selectedRow;
+
+  /// Resultado exibido como JSON (selecionável/copiável) em vez de tabela.
+  /// Só estado de view — não vai pro frontmatter do `.dbq`.
+  bool asJson = false;
 }
 
 /// Estado do painel Database + serviço de execução pras tabs `.dbq` (plano
