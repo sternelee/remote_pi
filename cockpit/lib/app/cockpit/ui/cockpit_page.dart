@@ -767,7 +767,29 @@ class _CockpitPageState extends State<CockpitPage> {
         _focusContentSearch,
     const SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true):
         _focusContentSearch,
+    // ⌘` / Ctrl+`: próximo realm; com Shift: anterior. O logical key de ⇧` no
+    // macOS chega como `~` (charactersIgnoringModifiers não ignora Shift),
+    // então registramos backquote E tilde pro caminho com Shift.
+    const SingleActivator(LogicalKeyboardKey.backquote, meta: true):
+        _nextRealm,
+    const SingleActivator(LogicalKeyboardKey.backquote, control: true):
+        _nextRealm,
+    const SingleActivator(LogicalKeyboardKey.backquote, meta: true, shift: true):
+        _previousRealm,
+    const SingleActivator(
+      LogicalKeyboardKey.backquote,
+      control: true,
+      shift: true,
+    ): _previousRealm,
+    const SingleActivator(LogicalKeyboardKey.tilde, meta: true, shift: true):
+        _previousRealm,
+    const SingleActivator(LogicalKeyboardKey.tilde, control: true, shift: true):
+        _previousRealm,
   };
+
+  void _nextRealm() => unawaited(_vm.cycleRealm(1));
+
+  void _previousRealm() => unawaited(_vm.cycleRealm(-1));
 
   @override
   Widget build(BuildContext context) {
