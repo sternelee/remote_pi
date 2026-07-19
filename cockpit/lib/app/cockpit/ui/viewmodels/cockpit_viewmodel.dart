@@ -1358,6 +1358,16 @@ class CockpitViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Troca pro realm vizinho na ordem do seletor (⌘` / ⌘⇧`): [delta] +1 avança,
+  /// -1 volta, com wrap-around. No-op com 0–1 realms.
+  Future<void> cycleRealm(int delta) async {
+    if (_realmList.length < 2) return;
+    final idx = _realmList.indexWhere((r) => r.id == _activeRealmId);
+    final next =
+        _realmList[(idx + delta + _realmList.length) % _realmList.length];
+    await switchRealm(next.id);
+  }
+
   /// Cria um realm novo (não troca o ativo — a UI decide se troca em seguida).
   Future<Realm> createRealm(String name) async {
     final nextOrder = _realmList.isEmpty
