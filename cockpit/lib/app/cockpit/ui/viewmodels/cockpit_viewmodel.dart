@@ -1,17 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show File, FileSystemException, Platform;
+import 'dart:io' show File, Platform;
 import 'dart:math' show max;
 
 import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
 
 import 'package:cockpit/app/cockpit/domain/contracts/app_launcher.dart';
-import 'package:cockpit/app/cockpit/domain/entities/db_result.dart';
-import 'package:cockpit/app/cockpit/domain/entities/dbq_document.dart';
-import 'package:cockpit/app/cockpit/domain/entities/sql_statements.dart';
-import 'package:cockpit/app/cockpit/domain/entities/db_connection.dart';
 import 'package:cockpit/app/cockpit/domain/services/db_query_service.dart';
-import 'package:cockpit/app/cockpit/domain/services/mongo_browse_service.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/content_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_searcher.dart';
@@ -46,7 +41,6 @@ import 'package:cockpit/app/core/data/lsp/lsp_server_pool.dart';
 import 'package:cockpit/app/core/data/lsp/lsp_text_edit.dart';
 import 'package:cockpit/app/core/domain/entities/lsp_diagnostic.dart';
 import 'package:cockpit/app/core/domain/result.dart';
-import 'package:cockpit/app/cockpit/ui/session/terminal_read_window.dart';
 import 'package:cockpit/app/core/utils/user_home.dart';
 import 'package:cockpit/app/cockpit/ui/session/agent_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/diff_viewer_session.dart';
@@ -61,6 +55,7 @@ import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_scrollback_store.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
+import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_cli_handler.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/git_controller.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/realm_controller.dart';
 import 'package:flutter/foundation.dart';
@@ -374,6 +369,35 @@ class CockpitViewModel extends ChangeNotifier {
   List<LaunchableApp> get availableApps =>
       List<LaunchableApp>.unmodifiable(_availableApps);
   PaneItem? session(String id) => _sessions[id];
+
+  /// Todas as sessões abertas (qualquer workspace) — usado pela CLI interna
+  /// ([CockpitCliHandler]) pra list-panes/resolução por label.
+  Iterable<PaneItem> get allSessions => _sessions.values;
+
+  /// Lookup público de projeto por id (CLI interna e colaboradores).
+  Project? projectById(String? id) => _projectById(id);
+
+  /// Id da folha (coluna de splits) que contém a aba [tabId] no projeto
+  /// [projectId], ou `null` se não achar. Usado pra abrir o arquivo ao lado do
+  /// terminal que emitiu o `cockpit open`.
+  String? leafOfTab(String projectId, String tabId) {
+    final tree = _trees[projectId];
+    if (tree == null) return null;
+    for (final leaf in leaves(tree)) {
+      if (leaf.tabs.contains(tabId)) return leaf.id;
+    }
+    return null;
+  }
+
+  /// Handler da CLI interna `cockpit` — colaborador extraído; criado aqui
+  /// (e não no módulo) porque referencia o próprio VM.
+  late final CockpitCliHandler _cli = CockpitCliHandler(
+    this,
+    _dbService,
+    _taskDiscovery,
+    _taskRunner,
+    _taskTerminals,
+  );
 
   /// `true` se existe ao menos uma aba de agente **real** (não o placeholder
   /// vazio `AgentStatus.empty`). Usado pra impedir desligar `enableAgent` com
@@ -1316,7 +1340,7 @@ class CockpitViewModel extends ChangeNotifier {
     // Servidor de status do `cockpit-hook` (claude nas abas reporta turno aqui).
     // Await: no Windows o `hookEnv` depende da porta ligada antes de spawnar abas.
     // O mesmo socket atende a CLI interna `cockpit` (`_onCockpitCommand`).
-    await _statusServer.start(_onClaudeStatus, onCommand: _onCockpitCommand);
+    await _statusServer.start(_onClaudeStatus, onCommand: _cli.handle);
     // Realms antes dos projetos: o filtro do rail e a seleção inicial dependem
     // do realm ativo. `all()` garante o Default.
     await realmCtrl.load();
@@ -2718,484 +2742,6 @@ class CockpitViewModel extends ChangeNotifier {
     if (s.claudeSessionId != hadSid && s.claudeSessionId != null) {
       _scheduleSave(s.projectId);
     }
-  }
-
-  /// Atende um comando da CLI interna `cockpit` (via o mesmo socket do
-  /// [TerminalStatusServer]). Roda **fora** da árvore de widgets — não toca
-  /// `BuildContext`, só lê/muta o estado da VM. Retorna rápido (o `insertText`
-  /// só enfileira o write no PTY).
-  Future<CockpitCommandResult> _onCockpitCommand(CockpitCommand c) async {
-    switch (c.cmd) {
-      // `send` e `send-key` chegam unificados como `write` (a CLI já resolveu o
-      // texto/tecla em bytes UTF-8, transmitidos em base64 pra não quebrar o
-      // framing de uma-linha-por-conexão).
-      case 'write':
-        final id = c.tabId;
-        if (id == null || id.isEmpty) {
-          return const CockpitCommandResult.fail(
-            'missing tabId (use --tab-id or run inside a Cockpit terminal)',
-          );
-        }
-        final s = _sessions[id];
-        if (s == null) {
-          return CockpitCommandResult.fail('tab "$id" does not exist');
-        }
-        if (s is! TerminalSession) {
-          return CockpitCommandResult.fail('tab "$id" is not a terminal');
-        }
-        final raw = (c.args['data'] ?? '').toString();
-        String text;
-        try {
-          text = utf8.decode(base64.decode(raw));
-        } catch (_) {
-          return const CockpitCommandResult.fail(
-            'invalid data (base64 expected)',
-          );
-        }
-        s.insertText(text);
-        return const CockpitCommandResult.ok();
-
-      case 'list-panes':
-        final panes = _sessions.values
-            .map(
-              (s) => <String, dynamic>{
-                'id': s.id,
-                'kind': _paneKind(s),
-                'title': s.title,
-                // Rótulo manual estável (duplo-clique / "Rename"); `null` quando
-                // a aba segue o título automático. É por ESTE campo que a
-                // orquestração resolve pane por nome — não pelo `title` dinâmico
-                // (que o claude/OSC reescrevem) nem pelo cwd (volátil).
-                'label': s.manualLabel,
-                'workspaceId': s.projectId,
-                // Raiz do workspace no disco. `workspaceId` é um UUID opaco
-                // desde a migração dos realms — quem precisa do caminho (ex.:
-                // scripts que casavam por sufixo) usa este campo.
-                'workspacePath': _projectById(s.projectId)?.path,
-                // Aba de task output → id da task espelhada (`npm:dev`…), o
-                // mesmo aceito por `read-task`. Ausente nas demais tabs.
-                if (s is TaskOutputSession) 'taskId': s.taskId,
-                'working': s.isWorking,
-              },
-            )
-            .toList();
-        return CockpitCommandResult.ok(panes);
-
-      // `cockpit open <path>` — abre um arquivo no viewer. A CLI já resolveu
-      // pro caminho absoluto (o cwd do pane ≠ cwd do app). Abre no workspace do
-      // pane que emitiu (trazendo-o pra frente se não for o ativo) e como aba
-      // ao lado do próprio terminal (mesma folha).
-      case 'open':
-        final path = (c.args['path'] ?? '').toString();
-        if (path.isEmpty) {
-          return const CockpitCommandResult.fail('missing path');
-        }
-        if (!await File(path).exists()) {
-          return CockpitCommandResult.fail('file not found: "$path"');
-        }
-        final from = c.tabId;
-        String? targetProject;
-        String? targetLeaf;
-        if (from != null && from.isNotEmpty) {
-          final s = _sessions[from];
-          if (s != null) {
-            targetProject = s.projectId;
-            targetLeaf = _leafOfTab(targetProject, from);
-          }
-        }
-        if (targetProject != null && targetProject != _selectedProjectId) {
-          selectProject(targetProject);
-        }
-        if (_selectedProjectId == null) {
-          return const CockpitCommandResult.fail(
-            'no active workspace to open the file in',
-          );
-        }
-        await openFile(path, inPane: targetLeaf, isPreview: false);
-        return const CockpitCommandResult.ok();
-
-      case 'list-workspaces':
-        final ws = _projectList
-            .map(
-              (p) => <String, dynamic>{
-                'id': p.id,
-                'name': p.name,
-                // Raiz no disco (mesma razão do `workspacePath` do list-panes:
-                // o `id` virou UUID opaco; antes o path ERA o id).
-                'path': p.path,
-                // Nº de tabs (sessões) abertas nesse workspace. Campo era 'panes'
-                // (enganoso — sempre foi contagem de tabs, não de folhas-pane).
-                'tabs': _sessions.values
-                    .where((s) => s.projectId == p.id)
-                    .length,
-              },
-            )
-            .toList();
-        return CockpitCommandResult.ok(ws);
-
-      // `cockpit read-pane [<label|tab-id>]` — devolve uma janela de linhas do
-      // buffer renderizado do pane (texto plano, sem ANSI — é o que o xterm já
-      // pintou). Args: `lines` (default 100), `offset` (pula N a partir da
-      // âncora), `fromStart` (âncora no começo; default = fim/tail). A ordem
-      // das linhas é sempre cronológica — as flags só escolhem a janela.
-      case 'read-pane':
-        final target = (c.args['target'] ?? '').toString();
-        final PaneItem? s;
-        if (target.isNotEmpty) {
-          final resolved = _resolvePaneTarget(target);
-          if (resolved case Failure(:final error)) {
-            return CockpitCommandResult.fail(error);
-          }
-          s = (resolved as Success<PaneItem, String>).value;
-        } else {
-          final id = c.tabId;
-          if (id == null || id.isEmpty) {
-            return const CockpitCommandResult.fail(
-              'missing target (pass <label|tab-id> or run inside a Cockpit '
-              'terminal)',
-            );
-          }
-          s = _sessions[id];
-          if (s == null) {
-            return CockpitCommandResult.fail('tab "$id" does not exist');
-          }
-        }
-        final term = switch (s) {
-          TerminalSession t => t.terminal,
-          TaskOutputSession t => t.terminal,
-          _ => null,
-        };
-        if (term == null) {
-          return CockpitCommandResult.fail(
-            'tab "${s.id}" (${_paneKind(s)}) has no readable output',
-          );
-        }
-        return CockpitCommandResult.ok(readTerminalWindow(term, c.args));
-
-      // `cockpit list-tasks` — tasks do workspace do pane emissor (tabId,
-      // default da CLI = a própria tab; fallback: workspace selecionado).
-      // Mesmos binds do painel Tasks → mesma lista que a UI. `id` é o aceito
-      // por `read-task`; `hasOutput` diz se o read vai responder.
-      case 'list-tasks':
-        final sender = c.tabId == null ? null : _sessions[c.tabId];
-        final project = sender != null
-            ? _projectById(sender.projectId)
-            : selectedProject;
-        if (project == null ||
-            project.isSystemTerminal ||
-            project.path.isEmpty) {
-          return const CockpitCommandResult.fail(
-            'no workspace to list tasks for',
-          );
-        }
-        final defs = await _taskDiscovery.discover(project.path);
-        final tasks = defs
-            .map(
-              (d) => <String, dynamic>{
-                'id': d.id,
-                'label': d.label,
-                'kind': d.kind.name,
-                'source': d.source.name,
-                'running': _taskRunner.runOf(d.id).isActive,
-                'hasOutput': _taskTerminals.existingTerminal(d.id) != null,
-              },
-            )
-            .toList();
-        return CockpitCommandResult.ok(tasks);
-
-      // `cockpit read-task <task-id>` — mesma leitura, mas do terminal da task
-      // no `TaskTerminalStore` (funciona mesmo sem aba `task_output` aberta).
-      case 'read-task':
-        final taskId = (c.args['target'] ?? '').toString();
-        if (taskId.isEmpty) {
-          return const CockpitCommandResult.fail('missing task id');
-        }
-        final term = _taskTerminals.existingTerminal(taskId);
-        if (term == null) {
-          return CockpitCommandResult.fail(
-            'no output recorded for task "$taskId" (never ran this boot?)',
-          );
-        }
-        return CockpitCommandResult.ok(readTerminalWindow(term, c.args));
-
-      // ── `cockpit db …` (plano 51) — acesso a banco pros agentes. A CLI é
-      // cliente magro: quem executa é o app (mesmo motor da tab `.dbq`), e a
-      // credencial nunca sai daqui. Workspace do pane emissor; `--workspace
-      // <id|path>` pra uso fora de pane. Erros de banco voltam como
-      // `<kind>: <message>` (a CLI reconstrói o JSON `{"error":{…}}`).
-      case 'db-list':
-        return _dbCommand(c, (project) async {
-          final conns = await _dbService.connections(project.path);
-          return CockpitCommandResult.ok([
-            for (final conn in conns)
-              {
-                'name': conn.name,
-                'engine': conn.engine.label,
-                'target': conn.displayTarget,
-                'origin': conn.origin.name,
-              },
-          ]);
-        });
-
-      case 'db-schema':
-        return _dbCommand(c, (project) async {
-          final table = (c.args['table'] ?? '').toString();
-          final result = await _dbService.schema(
-            workspaceRoot: project.path,
-            workspaceId: project.id,
-            connName: (c.args['db'] ?? '').toString(),
-            table: table.isEmpty ? null : table,
-          );
-          return CockpitCommandResult.ok(result.toJson());
-        });
-
-      case 'db-query':
-      case 'db-execute':
-        return _dbCommand(c, (project) async {
-          final result = await _dbService.query(
-            workspaceRoot: project.path,
-            workspaceId: project.id,
-            connName: (c.args['db'] ?? '').toString(),
-            sql: (c.args['sql'] ?? '').toString(),
-            limit: int.tryParse('${c.args['limit'] ?? ''}'),
-            dml: c.cmd == 'db-execute',
-          );
-          return CockpitCommandResult.ok(result.toJson());
-        });
-
-      // `cockpit db run <file.dbq>` — executa o arquivo (frontmatter decide
-      // conexão e limite). O path chega absoluto (a CLI resolve contra o cwd).
-      case 'db-run':
-        return _dbCommand(c, (project) async {
-          final path = (c.args['path'] ?? '').toString();
-          if (path.isEmpty) {
-            return const CockpitCommandResult.fail('missing .dbq path');
-          }
-          final String content;
-          try {
-            content = await File(path).readAsString();
-          } on FileSystemException catch (e) {
-            return CockpitCommandResult.fail(
-              'cannot read "$path": ${e.message}',
-            );
-          }
-          final doc = DbqDocument.parse(content);
-          if (doc.db == null) {
-            return CockpitCommandResult.fail(
-              'unknown_connection: "$path" has no "-- db:" frontmatter — '
-              'pick a database in the Cockpit tab or add the line manually',
-            );
-          }
-          // Mesma semântica de script da tab: statements em sequência,
-          // resultado do último.
-          final result = await _dbService.runStatements(
-            workspaceRoot: project.path,
-            workspaceId: project.id,
-            connName: doc.db!,
-            statements: [for (final st in splitSqlStatements(doc.sql)) st.text],
-            limit: doc.limit,
-          );
-          return CockpitCommandResult.ok(result.toJson());
-        });
-
-      // `cockpit redis` — comando de cache CLI-only (plano 51). `args.parts`
-      // é a lista do comando (`['GET','foo']`). Reply cru em JSON.
-      case 'redis-cmd':
-        return _dbCommand(c, (project) async {
-          final parts = [
-            for (final p in (c.args['parts'] as List? ?? const [])) '$p',
-          ];
-          final reply = await _dbService.redisCommand(
-            workspaceRoot: project.path,
-            workspaceId: project.id,
-            connName: (c.args['db'] ?? '').toString(),
-            parts: parts,
-          );
-          return CockpitCommandResult.ok(reply);
-        });
-
-      // `cockpit mongo` — CLI-only: `args.command` é o JSON do runCommand.
-      case 'mongo-cmd':
-        return _dbCommand(c, (project) async {
-          final raw = (c.args['command'] ?? '{}').toString();
-          final Map<String, dynamic> command;
-          try {
-            command = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-          } catch (_) {
-            return const CockpitCommandResult.fail(
-              'query_failed: invalid JSON command',
-            );
-          }
-          final reply = await _dbService.mongoCommand(
-            workspaceRoot: project.path,
-            workspaceId: project.id,
-            connName: (c.args['db'] ?? '').toString(),
-            command: command,
-          );
-          return CockpitCommandResult.ok(reply);
-        });
-
-      // `cockpit redis browse` / `cockpit mongo browse` (plano 53, decisão D):
-      // o agente abre a view filtrada pro humano. Abrir view ≠ executar — não
-      // devolve dados; valida filtro/conexão ANTES de abrir.
-      case 'redis-browse':
-        return _dbCommand(c, (project) async {
-          final connName = (c.args['db'] ?? '').toString();
-          final err = await _checkBrowseConn(project, connName, DbEngine.redis);
-          if (err != null) return CockpitCommandResult.fail(err);
-          final ok = openRedisBrowser(
-            connName,
-            projectId: project.id,
-            pattern: (c.args['pattern'] ?? '').toString(),
-          );
-          if (!ok) {
-            return const CockpitCommandResult.fail(
-              'workspace has no open pane to attach the browser to',
-            );
-          }
-          return CockpitCommandResult.ok({'opened': 'redis', 'db': connName});
-        });
-
-      case 'mongo-browse':
-        return _dbCommand(c, (project) async {
-          final connName = (c.args['db'] ?? '').toString();
-          final collection = (c.args['collection'] ?? '').toString();
-          if (collection.isEmpty) {
-            return const CockpitCommandResult.fail('missing <collection>');
-          }
-          final err = await _checkBrowseConn(project, connName, DbEngine.mongo);
-          if (err != null) return CockpitCommandResult.fail(err);
-          final filter = (c.args['filter'] ?? '').toString();
-          // Valida o JSON aqui — nunca abrir a tab com filtro quebrado.
-          MongoBrowseService.parseFilter(filter);
-          final ok = openMongoBrowser(
-            connName,
-            collection,
-            projectId: project.id,
-            filter: filter,
-          );
-          if (!ok) {
-            return const CockpitCommandResult.fail(
-              'workspace has no open pane to attach the browser to',
-            );
-          }
-          return CockpitCommandResult.ok({
-            'opened': 'mongo',
-            'db': connName,
-            'collection': collection,
-          });
-        });
-
-      default:
-        return CockpitCommandResult.fail('unknown command: "${c.cmd}"');
-    }
-  }
-
-  /// Valida a conexão alvo de um `browse`: existe no workspace e é do
-  /// [engine] esperado. `null` = ok; senão a mensagem de erro.
-  Future<String?> _checkBrowseConn(
-    Project project,
-    String connName,
-    DbEngine engine,
-  ) async {
-    if (connName.isEmpty) return 'missing --db <name>';
-    final conns = await _dbService.connections(project.path);
-    for (final conn in conns) {
-      if (conn.name == connName) {
-        return conn.engine == engine
-            ? null
-            : '"$connName" is a ${conn.engine.label} connection, '
-                  'not ${engine.label}';
-      }
-    }
-    final available = conns.map((c) => c.name).join(', ');
-    return 'no connection named "$connName" '
-        '(available: ${available.isEmpty ? 'none' : available})';
-  }
-
-  /// Molde dos comandos `db-*`: resolve o workspace (decisão K do plano 51 —
-  /// `--workspace <id|path>` > pane emissor > erro, **nunca** cwd nem chute) e
-  /// converte [DbQueryException] em `fail("<kind>: <mensagem>")`.
-  Future<CockpitCommandResult> _dbCommand(
-    CockpitCommand c,
-    Future<CockpitCommandResult> Function(Project project) action,
-  ) async {
-    Project? project;
-    final ws = (c.args['workspace'] ?? '').toString();
-    if (ws.isNotEmpty) {
-      for (final p in _projectList) {
-        if (p.id == ws || p.path == ws) {
-          project = p;
-          break;
-        }
-      }
-      if (project == null) {
-        return CockpitCommandResult.fail('no workspace matches "$ws"');
-      }
-    } else {
-      final sender = c.tabId == null ? null : _sessions[c.tabId];
-      project = sender == null ? null : _projectById(sender.projectId);
-      if (project == null) {
-        return const CockpitCommandResult.fail(
-          'not inside a Cockpit pane — pass --workspace <id|path> '
-          '(see `cockpit list-workspaces`)',
-        );
-      }
-    }
-    if (project.isSystemTerminal || project.path.isEmpty) {
-      return const CockpitCommandResult.fail(
-        'this pane has no workspace folder',
-      );
-    }
-    try {
-      return await action(project);
-    } on DbQueryException catch (e) {
-      return CockpitCommandResult.fail('${e.kind}: ${e.message}');
-    }
-  }
-
-  /// Resolve o alvo de um `read-pane`: primeiro por id exato (`t3`), depois
-  /// por `manualLabel` (case-insensitive). Label ambíguo = erro — nunca chuta
-  /// pane (mesma regra do dispatch de orquestração).
-  Result<PaneItem, String> _resolvePaneTarget(String target) {
-    final byId = _sessions[target];
-    if (byId != null) return Success(byId);
-    final lower = target.toLowerCase();
-    final byLabel = _sessions.values
-        .where((s) => s.manualLabel?.toLowerCase() == lower)
-        .toList();
-    if (byLabel.length == 1) return Success(byLabel.first);
-    if (byLabel.length > 1) {
-      return Failure(
-        'label "$target" is ambiguous (${byLabel.length} tabs) — '
-        'use a tab-id from `cockpit list-tabs`',
-      );
-    }
-    return Failure(
-      'no tab with id or label "$target" (see `cockpit list-tabs`)',
-    );
-  }
-
-  /// Id da folha (coluna de splits) que contém a aba [tabId] no projeto
-  /// [projectId], ou `null` se não achar. Usado pra abrir o arquivo ao lado do
-  /// terminal que emitiu o `cockpit open`.
-  String? _leafOfTab(String projectId, String tabId) {
-    final tree = _trees[projectId];
-    if (tree == null) return null;
-    for (final leaf in leaves(tree)) {
-      if (leaf.tabs.contains(tabId)) return leaf.id;
-    }
-    return null;
-  }
-
-  String _paneKind(PaneItem s) {
-    if (s is TerminalSession) return 'terminal';
-    if (s is AgentSession) return 'agent';
-    if (s is FileViewerSession) return 'file';
-    if (s is TaskOutputSession) return 'task';
-    if (s is RedisBrowserSession) return 'redis';
-    if (s is MongoBrowserSession) return 'mongo';
-    return 'other';
   }
 
   /// Env de PATH escopado: prepend `~/.cockpit/bin` (onde o binário `cockpit` é
