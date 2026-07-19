@@ -332,6 +332,141 @@ cockpit open src/app/page.tsx`}
             </div>
           </section>
 
+          {/* ---------------- DATABASE ---------------- */}
+          <section id="database">
+            <div className="section-head reveal" style={{ marginTop: 110 }}>
+              <span className="eyebrow">Database</span>
+              <h2>Query your databases — you and your agents.</h2>
+              <p>
+                A Database panel lives in the sidebar, next to Files and Search.
+                Register connections per workspace, open <code>.dbq</code> query
+                files in their own tab, and let agents run the same queries
+                through the <code>cockpit db</code> CLI. SQLite works today;
+                Postgres and MySQL are coming next.
+              </p>
+            </div>
+
+            <div
+              className="reveal"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 18,
+                marginTop: 28,
+                maxWidth: 760,
+              }}
+            >
+              <div className="feat-card">
+                <h3>Connections per workspace</h3>
+                <p>
+                  Connections live in <code>.cockpit/databases.json</code> —
+                  versioned with the repo and never containing a password. A
+                  personal <code>databases.local.json</code> overlay
+                  (gitignored) merges on top for machine-specific setups.
+                </p>
+              </div>
+              <div className="feat-card">
+                <h3>SQLite, auto-detected</h3>
+                <p>
+                  SQLite files in the repo are recognized by their magic header
+                  and show up in the panel as detected connections — no
+                  registration needed. Just open them and query.
+                </p>
+              </div>
+              <div className="feat-card">
+                <h3>Passwords in the OS vault</h3>
+                <p>
+                  Flip &ldquo;Save Password&rdquo; and the credential goes into
+                  your system&apos;s secure store — Keychain on macOS,
+                  Credential Manager on Windows, keyring on Linux. Never into a
+                  file.
+                </p>
+              </div>
+            </div>
+
+            <div className="section-head reveal" style={{ marginTop: 64 }}>
+              <h2 style={{ fontSize: "clamp(22px, 2.6vw, 30px)" }}>
+                The <code>.dbq</code> file
+              </h2>
+              <p>
+                A <code>.dbq</code> is a plain SQL file with a tiny frontmatter
+                in SQL comments. Cockpit opens it as a query tab: a
+                syntax-highlighted SQL editor on top, a result grid below, and a
+                draggable split between them. Hit Run — or select some SQL and
+                press <code>⌘↵</code> to run just the selection. And whenever
+                the file is saved — including by an agent — the tab re-executes
+                automatically, so the grid always reflects the file on disk.
+              </p>
+            </div>
+            <div className="reveal" style={{ marginTop: 24, maxWidth: 760 }}>
+              <CodeBlock
+                label="orders.dbq"
+                code={`-- db: dev-local
+-- limit: 100
+SELECT * FROM orders ORDER BY created_at DESC;`}
+              />
+            </div>
+
+            <div className="section-head reveal" style={{ marginTop: 64 }}>
+              <h2 style={{ fontSize: "clamp(22px, 2.6vw, 30px)" }}>
+                <code>cockpit db</code> — the agent&apos;s door
+              </h2>
+              <p>
+                Agents use the exact same engine through the CLI. The app is
+                what actually executes the query — credentials never pass
+                through the CLI, and agents only reference connections by name.
+                From a terminal outside a Cockpit tab, add{" "}
+                <code>--workspace &lt;id|path&gt;</code> to say which workspace
+                you mean.
+              </p>
+            </div>
+            <div className="reveal" style={{ marginTop: 24, maxWidth: 760 }}>
+              <CodeBlock
+                label="Cockpit terminal"
+                prompt
+                code={`# list this workspace's connections (registered + detected)
+cockpit db list
+
+# inspect the schema — all tables, or one
+cockpit db schema --db dev-local
+cockpit db schema --db dev-local orders
+
+# read (SELECT) and write (INSERT/UPDATE/DDL)
+cockpit db query --db dev-local --sql "SELECT * FROM orders" --limit 50
+cockpit db execute --db dev-local --sql "UPDATE orders SET status = 'shipped' WHERE id = 42"
+
+# run a .dbq file (its frontmatter picks the connection and limit)
+cockpit db run reports/orders.dbq`}
+              />
+            </div>
+            <div className="reveal" style={{ marginTop: 18, maxWidth: 760 }}>
+              <p style={{ color: "var(--ink-soft)" }}>
+                Every command prints exactly one line of JSON. On success:
+              </p>
+            </div>
+            <div className="reveal" style={{ marginTop: 14, maxWidth: 760 }}>
+              <CodeBlock
+                label="stdout (success)"
+                code={`{"ok":{"columns":[{"name":"id","type":"INTEGER"},{"name":"status","type":"TEXT"}],"rows":[[42,"shipped"]],"rowCount":1,"truncated":false,"elapsedMs":12}}`}
+              />
+            </div>
+            <div className="reveal" style={{ marginTop: 18, maxWidth: 760 }}>
+              <p style={{ color: "var(--ink-soft)" }}>
+                Each entry in <code>rows</code> is an array of values in the
+                same order as <code>columns</code>, and{" "}
+                <code>truncated: true</code> means the result was cut at the{" "}
+                <code>--limit</code> (default 200). On failure the process exits
+                with status 1 and prints:
+              </p>
+            </div>
+            <div className="reveal" style={{ marginTop: 14, maxWidth: 760 }}>
+              <CodeBlock
+                label="stdout (error)"
+                code={`{"error":{"kind":"unknown_connection","message":"No connection named 'prod' in this workspace"}}`}
+              />
+            </div>
+          </section>
+
           {/* ---------------- PLATFORMS ---------------- */}
           <section id="platforms">
             <div className="section-head reveal" style={{ marginTop: 110 }}>
