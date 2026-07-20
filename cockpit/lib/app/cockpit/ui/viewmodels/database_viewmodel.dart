@@ -291,6 +291,15 @@ class DatabaseViewModel extends ChangeNotifier {
     return cols;
   }
 
+  /// Cita um identificador na sintaxe do engine — tabela CamelCase (ex.
+  /// nopCommerce no Postgres) quebra sem aspas, porque o servidor normaliza
+  /// identificador não-citado pra minúsculo. Citar é inócuo pros demais.
+  static String quoteIdent(DbEngine engine, String ident) => switch (engine) {
+    DbEngine.mysql => '`${ident.replaceAll('`', '``')}`',
+    DbEngine.mssql => '[${ident.replaceAll(']', ']]')}]',
+    _ => '"${ident.replaceAll('"', '""')}"',
+  };
+
   /// Cria um `.dbq` já apontado pra [conn] na raiz do workspace e devolve o
   /// caminho absoluto (o painel abre via CockpitViewModel). [table] preenche
   /// `SELECT * FROM <table>` e nomeia o arquivo pela tabela. Escolhe um nome
@@ -304,7 +313,9 @@ class DatabaseViewModel extends ChangeNotifier {
     for (var n = 2; File(path).existsSync(); n++) {
       path = '$root/$base-query-$n.dbq';
     }
-    final sql = table == null ? 'SELECT 1;' : 'SELECT * FROM $table LIMIT 100;';
+    final sql = table == null
+        ? 'SELECT 1;'
+        : 'SELECT * FROM ${quoteIdent(conn.engine, table)} LIMIT 100;';
     await File(path).writeAsString('-- db: ${conn.name}\n$sql\n');
     return path;
   }

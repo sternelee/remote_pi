@@ -152,7 +152,11 @@ class _DbPanelState extends State<DbPanel> {
     // primeiro save. Tabela → já preenche o SELECT.
     context.read<CockpitViewModel>().openScratchDbq(
       connName: conn.name,
-      sql: table == null ? null : 'SELECT * FROM $table LIMIT 100;',
+      sql: table == null
+          ? null
+          : 'SELECT * FROM '
+                '${DatabaseViewModel.quoteIdent(conn.engine, table)} '
+                'LIMIT 100;',
     );
   }
 

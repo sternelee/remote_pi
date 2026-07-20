@@ -24,6 +24,9 @@ Drivers de DB com TLS de verdade (anakiORM atualizado).
   TLS support"). MySQL repassa `ssl-mode`, MSSQL repassa `encrypt`.
 - **FFI:** fix de colisão de símbolos quando vários drivers anaki carregam
   no mesmo processo (sqlite/mssql/redis/mongodb 0.1.4).
+- **New query:** o SELECT gerado pela árvore cita o nome da tabela na
+  sintaxe do engine (`"Tabela"`, backtick, `[colchete]`) — tabela CamelCase
+  no Postgres quebrava sem aspas.
 
 ## [1.14.3] — 2026-07-20
 
