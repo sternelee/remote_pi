@@ -24,6 +24,8 @@ terminal e melhorias de multirepo/UI.
   split) de dentro dos panes.
 - **Multirepo:** Files volta à árvore única com seções por repo + popup de
   branches no badge da rail.
+- **Guardrails de DB:** cada conexão define acesso read/readwrite e se fica
+  visível pros agentes na CLI (default: só leitura).
 
 ### Changed
 - **Motores absorvidos pro repo:** emulador de terminal (xterm) virou módulo
