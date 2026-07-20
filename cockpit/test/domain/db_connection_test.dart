@@ -99,6 +99,28 @@ void main() {
     expect(resaved.user, 'bhuser');
   });
 
+  test('mongodb+srv resolve pro engine mongo', () {
+    final c = DbConnection.fromJson({
+      'name': 'atlas',
+      'url': 'mongodb+srv://u:p@cluster0.x.mongodb.net/?retryWrites=true',
+    });
+    expect(c.engine, DbEngine.mongo);
+    expect(c.isSrv, isTrue);
+    expect(c.displayTarget, 'cluster0.x.mongodb.net');
+  });
+
+  test('senha crua sem percent-encoding é normalizada no fromJson', () {
+    final c = DbConnection.fromJson({
+      'name': 'pg',
+      'url': 'postgres://userdev:8nJM9g8%?FC(@host.rds.amazonaws.com:5432/db',
+    });
+    expect(c.engine, DbEngine.postgres);
+    expect(c.host, 'host.rds.amazonaws.com');
+    expect(c.port, 5432);
+    expect(c.user, 'userdev');
+    expect(c.urlPassword, '8nJM9g8%?FC(');
+  });
+
   test('url de engine desconhecido lança FormatException', () {
     expect(
       () => DbConnection.fromJson({'name': 'x', 'url': 'oracle://h/db'}),

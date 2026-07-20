@@ -156,7 +156,7 @@ class DbConnection {
     Map<String, Object?> json, {
     DbConnectionOrigin origin = DbConnectionOrigin.registered,
   }) {
-    final url = json['url'] as String? ?? '';
+    final url = _normalizeUrl(json['url'] as String? ?? '');
     return DbConnection(
       name: json['name'] as String? ?? '',
       engine: _engineFromUrl(url),
@@ -251,6 +251,42 @@ class DbConnection {
     access: access ?? this.access,
     agents: agents ?? this.agents,
   );
+
+  /// Torna parseável uma URL editada na mão com senha SEM percent-encoding
+  /// (`user:8nJM9g8%?FC(@host` → o `Uri.parse` lê a senha como porta e
+  /// estoura). Se o parse estrito falha, re-encoda o userinfo (trecho até o
+  /// último `@` da authority) e revalida; ainda inválida → o
+  /// [FormatException] sobe e a entrada é pulada pelo store.
+  static String _normalizeUrl(String url) {
+    try {
+      Uri.parse(url);
+      return url;
+    } on FormatException {
+      final sep = url.indexOf('://');
+      if (sep < 0) rethrow;
+      final start = sep + 3;
+      final pathIx = url.indexOf('/', start);
+      final authority = pathIx < 0
+          ? url.substring(start)
+          : url.substring(start, pathIx);
+      final at = authority.lastIndexOf('@');
+      if (at < 0) rethrow; // sem userinfo — o problema é outro
+      final userinfo = authority.substring(0, at);
+      final colon = userinfo.indexOf(':');
+      final user = colon < 0 ? userinfo : userinfo.substring(0, colon);
+      final pass = colon < 0 ? null : userinfo.substring(colon + 1);
+      final enc = pass == null
+          ? Uri.encodeComponent(user)
+          : '${Uri.encodeComponent(user)}:${Uri.encodeComponent(pass)}';
+      final rebuilt =
+          url.substring(0, start) +
+          enc +
+          authority.substring(at) +
+          (pathIx < 0 ? '' : url.substring(pathIx));
+      Uri.parse(rebuilt); // valida; inválida ainda → FormatException sobe
+      return rebuilt;
+    }
+  }
 
   static DbEngine _engineFromUrl(String url) {
     if (url.startsWith('sqlite:')) return DbEngine.sqlite;

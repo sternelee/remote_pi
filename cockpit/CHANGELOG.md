@@ -14,6 +14,15 @@ As versões seguem o `version:` do `pubspec.yaml` (SSOT). O campo `notes` do
   meio da frase).
 -->
 
+## [1.14.2] — 2026-07-20
+
+Fix no parse de URL do Database.
+
+### Fixed
+- **Senha crua na URL:** conexão com senha sem percent-encoding
+  (`user:8nJM9g8%?FC(@host`) falhava no parse e sumia da lista; agora o
+  userinfo é re-encodado automaticamente ao carregar.
+
 ## [1.14.1] — 2026-07-20
 
 Fixes no painel Database (Mongo Atlas).
