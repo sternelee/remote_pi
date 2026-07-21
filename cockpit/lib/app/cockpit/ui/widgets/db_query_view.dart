@@ -893,7 +893,7 @@ const double _indexColWidth = 44;
 /// Grid responsivo (decisão F): colunas preenchem a largura (sobra distribuída
 /// proporcionalmente), gutter de índice sem header, divisor de header
 /// arrastável só pra aumentar. Sem ordenação.
-class _DbGrid extends StatelessWidget {
+class _DbGrid extends StatefulWidget {
   const _DbGrid({
     required this.result,
     required this.baseWidths,
@@ -916,6 +916,27 @@ class _DbGrid extends StatelessWidget {
   /// congelar).
   final void Function(List<double> effective) onResizeStart;
   final void Function(int col, double delta) onResize;
+
+  @override
+  State<_DbGrid> createState() => _DbGridState();
+}
+
+class _DbGridState extends State<_DbGrid> {
+  /// Controller do eixo horizontal — necessário porque o
+  /// `ShadcnScrollBehavior` global NÃO desenha scrollbar em scrollables
+  /// horizontais (retorna o child cru); sem uma [Scrollbar] explícita o
+  /// usuário de mouse fica sem como alcançar as colunas fora da viewport.
+  final ScrollController _hCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _hCtrl.dispose();
+    super.dispose();
+  }
+
+  DbResult get result => widget.result;
+  List<double> get baseWidths => widget.baseWidths;
+  List<double>? get manualWidths => widget.manualWidths;
 
   @override
   Widget build(BuildContext context) {
@@ -949,19 +970,22 @@ class _DbGrid extends StatelessWidget {
               _GridHeader(
                 columns: result.columns,
                 widths: widths,
-                onResizeStart: () => onResizeStart(widths),
-                onResize: onResize,
+                onResizeStart: () => widget.onResizeStart(widths),
+                onResize: widget.onResize,
               ),
               Expanded(
                 child: ListView.builder(
+                  // Faixa livre no rodapé pra scrollbar horizontal não cobrir
+                  // a última linha (e o clique no thumb não disputar com ela).
+                  padding: const EdgeInsets.only(bottom: 14),
                   itemCount: result.rows.length,
                   itemExtent: 26,
                   itemBuilder: (context, i) => _GridRow(
                     number: i + 1,
                     cells: result.rows[i],
                     widths: widths,
-                    selected: i == selectedRow,
-                    onTap: () => onSelectRow(i),
+                    selected: i == widget.selectedRow,
+                    onTap: () => widget.onSelectRow(i),
                   ),
                 ),
               ),
@@ -969,9 +993,19 @@ class _DbGrid extends StatelessWidget {
           ),
         );
         if (sum < avail) return content;
-        return ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: true),
+        // Scrollbar explícita: o ShadcnScrollBehavior do app não desenha
+        // scrollbar em scrollables horizontais, então sem ela o overflow de
+        // colunas fica inalcançável com mouse (o wheel vertical pertence ao
+        // ListView de linhas). Shift+wheel e pan de trackpad seguem nativos.
+        // thickness maior que o default (7): o hit-test do RawScrollbar é só
+        // sobre a área pintada do thumb — com 7px na borda de baixo o alvo de
+        // clique era quase impossível de acertar.
+        return Scrollbar(
+          controller: _hCtrl,
+          thumbVisibility: true,
+          thickness: 12,
           child: SingleChildScrollView(
+            controller: _hCtrl,
             scrollDirection: Axis.horizontal,
             child: content,
           ),
