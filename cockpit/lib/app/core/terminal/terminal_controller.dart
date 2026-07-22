@@ -185,10 +185,26 @@ final class GhosttyTerminalController implements CockpitTerminalController {
   }
 }
 
+/// Ghostty (via `flterm`) ainda **engole teclas printáveis no Windows**: o
+/// `flterm` roteia o caractere pelo TextInput do Flutter no desktop e o commit
+/// não chega ao PTY, então o usuário não consegue digitar (o xterm não usa esse
+/// caminho e funciona). Bug upstream `elias8/libghostty`, ainda sem fix.
+///
+/// Enquanto isso, o Windows fica **travado no xterm**: o seletor some das
+/// Settings ([terminalEngineIsSelectable]) e qualquer engine pedido cai pra
+/// xterm ([resolveTerminalEngine]). macOS/Linux honram a escolha normalmente.
+bool get terminalEngineIsSelectable =>
+    defaultTargetPlatform != TargetPlatform.windows;
+
+/// Resolve o engine efetivo pra plataforma atual — força xterm no Windows (ver
+/// [terminalEngineIsSelectable]), passa direto no resto.
+TerminalEngine resolveTerminalEngine(TerminalEngine engine) =>
+    terminalEngineIsSelectable ? engine : TerminalEngine.xterm;
+
 CockpitTerminalController createTerminalController(
   TerminalEngine engine, {
   xterm.TerminalInputHandler? xtermInputHandler,
-}) => switch (engine) {
+}) => switch (resolveTerminalEngine(engine)) {
   TerminalEngine.ghostty => GhosttyTerminalController(),
   TerminalEngine.xterm => XtermTerminalController(
     inputHandler: xtermInputHandler,

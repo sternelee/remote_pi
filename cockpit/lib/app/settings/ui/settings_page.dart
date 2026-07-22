@@ -11,6 +11,8 @@ import 'package:cockpit/app/core/data/lsp/lsp_launchers.dart';
 import 'package:cockpit/app/core/data/setup/storage_location.dart';
 import 'package:cockpit/app/core/utils/native_folder_picker.dart';
 import 'package:cockpit/app/core/domain/entities/app_settings.dart';
+import 'package:cockpit/app/core/terminal/terminal_controller.dart'
+    show terminalEngineIsSelectable;
 import 'package:cockpit/app/settings/domain/entities/cron_job.dart';
 import 'package:cockpit/app/settings/domain/entities/daemon_info.dart';
 import 'package:cockpit/app/settings/domain/entities/paired_device.dart';
@@ -682,16 +684,20 @@ class _TerminalPanel extends StatelessWidget {
                 label: 'Default terminal',
                 child: _Card(
                   children: [
-                    _Row(
-                      title: 'Engine',
-                      description:
-                          'Used by new terminal tabs and task output buffers. '
-                          'Open tabs keep their current engine.',
-                      trailing: _TerminalEngineDropdown(
-                        value: controller.settings.terminalEngine,
-                        onChanged: controller.setTerminalEngine,
+                    // O seletor de engine some no Windows: Ghostty ainda engole
+                    // teclas lá (bug do flterm), então a plataforma fica travada
+                    // no xterm (ver `terminalEngineIsSelectable`).
+                    if (terminalEngineIsSelectable)
+                      _Row(
+                        title: 'Engine',
+                        description:
+                            'Used by new terminal tabs and task output buffers. '
+                            'Open tabs keep their current engine.',
+                        trailing: _TerminalEngineDropdown(
+                          value: controller.settings.terminalEngine,
+                          onChanged: controller.setTerminalEngine,
+                        ),
                       ),
-                    ),
                     if (Platform.isWindows)
                       _Row(
                         title: 'Shell',

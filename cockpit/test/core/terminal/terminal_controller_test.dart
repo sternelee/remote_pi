@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:cockpit/app/core/domain/entities/app_settings.dart';
 import 'package:cockpit/app/core/terminal/terminal_controller.dart';
 import 'package:flterm/flterm.dart' as ghost;
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -52,6 +54,41 @@ void main() {
       });
     });
   }
+
+  group('Windows engine gate', () {
+    // Ghostty (flterm) engole teclas printáveis no Windows → a plataforma fica
+    // travada no xterm: seletor some e qualquer engine pedido cai pra xterm.
+    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.windows);
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('engine não é selecionável no Windows', () {
+      expect(terminalEngineIsSelectable, isFalse);
+    });
+
+    test('resolveTerminalEngine força xterm no Windows', () {
+      expect(
+        resolveTerminalEngine(TerminalEngine.ghostty),
+        TerminalEngine.xterm,
+      );
+      expect(resolveTerminalEngine(TerminalEngine.xterm), TerminalEngine.xterm);
+    });
+
+    test('createTerminalController(ghostty) cai pra xterm no Windows', () {
+      final terminal = createTerminalController(TerminalEngine.ghostty);
+      addTearDown(terminal.dispose);
+      expect(terminal.engine, TerminalEngine.xterm);
+    });
+  });
+
+  test('engine é selecionável fora do Windows (macOS)', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    expect(terminalEngineIsSelectable, isTrue);
+    expect(
+      resolveTerminalEngine(TerminalEngine.ghostty),
+      TerminalEngine.ghostty,
+    );
+  });
 
   testWidgets('Ghostty restores OSC state after the initial layout', (
     tester,
