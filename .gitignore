@@ -85,3 +85,4 @@ pi-extension/test/.pi/
 !.cockpit/
 .cockpit/*
 !.cockpit/tasks.json
+graphify-out
