@@ -86,3 +86,4 @@ pi-extension/test/.pi/
 .cockpit/*
 !.cockpit/tasks.json
 graphify-out
+.cockpit/worktrees/
