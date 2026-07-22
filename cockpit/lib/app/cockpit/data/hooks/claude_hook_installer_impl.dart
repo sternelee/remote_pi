@@ -108,23 +108,25 @@ class ClaudeHookInstallerImpl implements ClaudeHookInstaller {
         await bundled.copy(dest.path);
         await _chmodExec(dest.path);
       }
-      return _nativePath(dest.path);
+      return _hookPath(dest.path);
     }
 
     // Dev / sem bundle: usa cópia pré-existente (colocada manualmente).
-    if (await dest.exists()) return _nativePath(dest.path);
+    if (await dest.exists()) return _hookPath(dest.path);
     return null;
   }
 
-  /// Normaliza separadores para o formato **nativo** da plataforma.
+  /// Normaliza o caminho para o `command` do hook usando **forward slashes**.
   ///
-  /// No Windows `$home` (`USERPROFILE`) vem com `\` (ex.: `C:\Users\x`), mas os
-  /// caminhos aqui são montados concatenando com `/` literal — o resultado é um
-  /// caminho misto (`C:\Users\x/.cockpit/bin/cockpit-hook.exe`) que, gravado cru
-  /// no `command` do hook em `settings.json`, o Claude Code no Windows não
-  /// executa. Trocar `/` por `\` deixa o caminho consistente. Em POSIX é no-op.
-  String _nativePath(String path) =>
-      Platform.isWindows ? path.replaceAll('/', r'\') : path;
+  /// O Claude Code executa os hooks via `bash` (git-bash/MSYS) mesmo no Windows.
+  /// O `bash` trata `\` como escape, então um caminho com `\` (ex.:
+  /// `C:\Users\x\.cockpit\bin\cockpit-hook.exe`) vira `C:Usersx.cockpit...` e dá
+  /// `command not found`. Como `$home` (`USERPROFILE`) vem com `\` no Windows, o
+  /// caminho montado ficava misto/quebrado. Convertendo tudo para `/`
+  /// (`C:/Users/x/.cockpit/bin/cockpit-hook.exe`) o bash executa normalmente. Em
+  /// POSIX é no-op.
+  String _hookPath(String path) =>
+      Platform.isWindows ? path.replaceAll(r'\', '/') : path;
 
   /// Caminho do helper empacotado no app, por plataforma:
   /// - macOS: `…/Contents/MacOS/<app>` → `…/Contents/Resources/cockpit-hook`
