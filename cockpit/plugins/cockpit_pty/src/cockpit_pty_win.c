@@ -354,18 +354,25 @@ FFI_PLUGIN_EXPORT PtyHandle *pty_create(PtyOptions *options)
     ZeroMemory(&startupInfo, sizeof(startupInfo));
     startupInfo.StartupInfo.cb = sizeof(startupInfo);
 
-    // Clear the child's inherited std handles (STARTF_USESTDHANDLES with NULL).
-    // This forces console-mode programs (cmd, powershell, bash, vim, …) to
-    // attach to the pseudoconsole and route ALL their I/O through it — including
-    // when this host process itself owns a console (e.g. launched from a
-    // terminal or `flutter run`). Without it the child inherits the host's real
-    // console instead of the ConPTY, so its output never reaches our pipe and
-    // the terminal view stays blank. (Programs that write via the raw stdout
-    // FILE handle rather than the console API still need their own handling.)
-    startupInfo.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startupInfo.StartupInfo.hStdInput = NULL;
-    startupInfo.StartupInfo.hStdOutput = NULL;
-    startupInfo.StartupInfo.hStdError = NULL;
+    // Clear the child's inherited std handles (STARTF_USESTDHANDLES with NULL)
+    // ONLY when this host process itself owns a real console (e.g. `flutter
+    // run`, launched from a terminal). There, without it, the child would
+    // inherit the host's real console instead of the ConPTY and its output
+    // would never reach our pipe — the terminal view stays blank.
+    //
+    // In a GUI build (release, no console) the hack is both unnecessary and
+    // harmful: NULL std handles make console programs see their stdio as
+    // *redirected*, so PowerShell disables PSReadLine ("console is running
+    // without PSReadLine"). Without the hack, the pseudoconsole attribute plus
+    // bInheritHandles=FALSE already route all I/O through the ConPTY — the
+    // canonical ConPTY pattern — and PSReadLine loads normally.
+    if (GetConsoleWindow() != NULL)
+    {
+        startupInfo.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        startupInfo.StartupInfo.hStdInput = NULL;
+        startupInfo.StartupInfo.hStdOutput = NULL;
+        startupInfo.StartupInfo.hStdError = NULL;
+    }
 
     SIZE_T bytesRequired;
     InitializeProcThreadAttributeList(NULL, 1, 0, &bytesRequired);
