@@ -229,3 +229,21 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+# TEMPORÁRIO — fork jacobaraujo7/libghostty (tag flterm-cockpit-2). Baseado no
+# RELEASE v0.0.11 (nativo prebuilt de elias8, mesmo do pub) + 2 fixes: (1) scroll
+# interno de TUI no Ghostty (wheel->mouse no alt-buffer) e (2) text input do
+# Windows (#114). NÃO usa o dev-branch do fork (que tem compressão e exige um
+# nativo mais novo, quebrando com dlsym 'ghostty_terminal_compression_activity').
+# Público + HTTPS pra funcionar no macOS E no Windows. Voltar pro pub quando o
+# upstream publicar os fixes.
+dependency_overrides:
+  flterm:
+    git:
+      url: https://github.com/jacobaraujo7/libghostty.git
+      ref: flterm-cockpit-2
+      path: packages/flterm
+  libghostty:
+    git:
+      url: https://github.com/jacobaraujo7/libghostty.git
+      ref: flterm-cockpit-2
+      path: packages/libghostty
