@@ -304,7 +304,19 @@ class TerminalSession extends PaneItem {
       return;
     }
     final text = await Pasteboard.text;
-    if (text != null && text.isNotEmpty) terminal.paste(text);
+    if (text != null && text.isNotEmpty) {
+      terminal.paste(text);
+      return;
+    }
+    // Windows: `Pasteboard.image` só lê `CF_DIB`; muitos apps (browsers, algumas
+    // ferramentas de captura) põem a imagem só como PNG/formato registrado →
+    // devolve `null` e o `\x16` nunca ia, então a imagem não chegava no harness.
+    // Sem texto no clipboard, é provável ser uma imagem que não conseguimos ler
+    // — manda `\x16` mesmo assim pro harness (claude/codex/pi) ler o clipboard
+    // ele mesmo. macOS/Linux não precisam: lá o `Pasteboard.image` já funciona.
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      _gateway.write(const [0x16]);
+    }
   }
 
   /// Acumula a saída no registro de scrollback, rastreando alt-screen (não grava
