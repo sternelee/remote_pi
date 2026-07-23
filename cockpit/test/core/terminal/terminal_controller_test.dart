@@ -90,6 +90,33 @@ void main() {
     );
   });
 
+  group('Ghostty replay não vaza resposta de query pro PTY', () {
+    test('restore (scrollback) com Primary DA não emite resposta no onOutput',
+        () {
+      final terminal = GhosttyTerminalController();
+      addTearDown(terminal.dispose);
+      final out = <int>[];
+      terminal.onOutput = out.addAll;
+      // Query embutida no histórico restaurado (Primary DA `ESC[c`).
+      terminal.restore('\x1b[c');
+      // Dispara o flush do replay (o restore fica na fila até o 1º resize).
+      terminal.controller.onResize?.call(120, 40);
+      // A resposta (`ESC[?...c`) foi suprimida — não vaza pro PTY.
+      expect(out, isEmpty);
+    });
+
+    test('write ao vivo com Primary DA responde normalmente', () {
+      final terminal = GhosttyTerminalController();
+      addTearDown(terminal.dispose);
+      // Marca o resize inicial (sem defer) pra `write` não cair na fila.
+      terminal.controller.onResize?.call(120, 40);
+      final out = <int>[];
+      terminal.onOutput = out.addAll;
+      terminal.write('\x1b[c');
+      expect(out, isNotEmpty);
+    });
+  });
+
   testWidgets('Ghostty restores OSC state after the initial layout', (
     tester,
   ) async {

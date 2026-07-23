@@ -78,7 +78,15 @@ final class GhosttyTerminalController implements CockpitTerminalController {
           scrollbackLimit: 10 * 1024 * 1024,
         ),
       ) {
-    controller.onOutput = (data) => onOutput?.call(data);
+    controller.onOutput = (data) {
+      // Durante o replay do scrollback (restore) o emulador responde às queries
+      // embutidas no histórico (Primary DA, DECRQM de modos como 2026 etc.);
+      // essas respostas NÃO podem ir pro PTG, senão viram lixo no prompt do
+      // shell (`?62;...c`, `?2026;2$y`...) — a resposta já foi tratada ao vivo
+      // na sessão original. Ver [_replayNow].
+      if (_replaying) return;
+      onOutput?.call(data);
+    };
     controller.onResize = (columns, rows) {
       final isInitialResize = !_hasInitialResize;
       _hasInitialResize = true;
@@ -123,13 +131,19 @@ final class GhosttyTerminalController implements CockpitTerminalController {
   bool _hasInitialResize = false;
   bool _deferWritesUntilPostFrame = false;
   bool _disposed = false;
-  List<String>? _pendingRestore;
+  bool _replaying = false;
+  // Filas separadas durante o defer (até o 1º resize): `_pendingReplay` é o
+  // scrollback restaurado (respostas suprimidas); `_pendingLive` é saída viva do
+  // shell que chegou cedo (respostas normais). Separadas porque a supressão de
+  // `onOutput` vale só pro replay — misturar dropava resposta de query viva.
+  List<String>? _pendingReplay;
+  List<String>? _pendingLive;
 
   @override
   void write(String data) {
     if (_deferWritesUntilPostFrame ||
-        (!_hasInitialResize && _pendingRestore != null)) {
-      (_pendingRestore ??= <String>[]).add(data);
+        (!_hasInitialResize && _pendingReplay != null)) {
+      (_pendingLive ??= <String>[]).add(data);
       return;
     }
     _writeNow(data);
@@ -138,20 +152,40 @@ final class GhosttyTerminalController implements CockpitTerminalController {
   @override
   void restore(String data) {
     if (_hasInitialResize && !_deferWritesUntilPostFrame) {
-      _writeNow(data);
+      _replayNow(data);
       return;
     }
-    (_pendingRestore ??= <String>[]).add(data);
+    (_pendingReplay ??= <String>[]).add(data);
   }
 
   void _flushPendingWrites() {
     if (_disposed) return;
     _deferWritesUntilPostFrame = false;
-    final pending = _pendingRestore;
-    _pendingRestore = null;
-    if (pending == null) return;
-    for (final data in pending) {
+    final replay = _pendingReplay;
+    final live = _pendingLive;
+    _pendingReplay = null;
+    _pendingLive = null;
+    if (replay != null) {
+      for (final data in replay) {
+        _replayNow(data);
+      }
+    }
+    if (live != null) {
+      for (final data in live) {
+        _writeNow(data);
+      }
+    }
+  }
+
+  /// Escreve conteúdo de REPLAY suprimindo o `onOutput` — ver o comentário no
+  /// wiring do `onOutput`. Sem isso, as queries do histórico geram respostas que
+  /// vazam pro PTG e sujam o prompt (chegou a criar um arquivo via `>|` redirect).
+  void _replayNow(String data) {
+    _replaying = true;
+    try {
       _writeNow(data);
+    } finally {
+      _replaying = false;
     }
   }
 
