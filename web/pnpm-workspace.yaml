@@ -1,0 +1,5 @@
+allowBuilds:
+  # esbuild ships a prebuilt native binary; workerd is the Workers runtime that
+  # `wrangler dev`/`start` launches. Both need their postinstall to run.
+  esbuild: true
+  workerd: true

@@ -1,0 +1,318 @@
+@import "tailwindcss";
+@import "streamdown/styles.css";
+
+/* Streamdown ships utility classes; point Tailwind at its dist so the code
+   block / link / table classes are generated. */
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+
+/*
+ * Terminal surface.
+ *
+ * Every colour is a `--pi-*` token declared once with CSS `light-dark()`. The
+ * function resolves against `color-scheme`, which the OS drives by default
+ * (`light dark`) and which `[data-theme]` pins for an explicit choice — so
+ * there is a single declaration per token, no duplicated light/dark blocks, and
+ * `system` needs no JavaScript watch to stay in sync.
+ *
+ * Consumers (the vendored brainless components, the pi/ surfaces) reference the
+ * tokens directly. Values captured against the original tokyo-night terminal
+ * are the dark side of each pair.
+ */
+@theme {
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    "Liberation Mono", "DejaVu Sans Mono", monospace;
+}
+
+:root {
+  color-scheme: light dark;
+  background: var(--pi-bg);
+  color: var(--pi-fg);
+
+  --pi-bg: light-dark(#f7f7f8, #0d0d0d);
+  --pi-fg: light-dark(#1f2335, #c0caf5);
+  --pi-fg-strong: light-dark(#10121a, #e1e1e1);
+  --pi-dim: light-dark(#6b7089, #565f89);
+  --pi-muted: light-dark(#4b5068, #8b8fa3);
+  --pi-border: light-dark(#dcdde2, #2a2a2a);
+  --pi-border-soft: light-dark(#e6e6ea, #202022);
+  --pi-border-strong: light-dark(#9a9aa5, #808080);
+  --pi-popover: light-dark(#ffffff, #16161a);
+  --pi-surface: light-dark(#efeff1, #101010);
+  --pi-cyan: light-dark(#0b6e99, #7dcfff);
+  --pi-green: light-dark(#2f7d4f, #4ea96f);
+  --pi-red: light-dark(#c0364c, #f7768e);
+  --pi-yellow: light-dark(#8a6200, #e0af68);
+  --pi-rose: light-dark(#b4472f, #cd694a);
+  --pi-purple: light-dark(#6f42c1, #bb9af7);
+  --pi-silver: light-dark(#6b6f80, #c0c0c0);
+  --pi-user-bg: light-dark(#e6e6ec, #3a3a3a);
+  --pi-user-fg: light-dark(#1f2335, #ffffff);
+  --pi-user-mark: light-dark(#9a9aa5, #4e4e4e);
+  --pi-term-bg: light-dark(#ececed, #1a1a1a);
+  --pi-input-bg: light-dark(#e4e4e8, #353535);
+  --pi-term-fg: light-dark(#1f2335, #ededed);
+  --pi-codex-model: light-dark(#8a6d1f, #f6e2b7);
+  --pi-codex-cwd: light-dark(#2f7d4f, #abdfa7);
+  --pi-codex-dim: light-dark(#8a8a90, #7a7a7a);
+  --pi-hilite: light-dark(#b5562f, #e79475);
+  --pi-think-dim: light-dark(#8a8a90, #6c6c6c);
+  --pi-think-muted: light-dark(#6b7089, #8b8b90);
+  --pi-slate: light-dark(#b9bcc8, #3b3f52);
+  --pi-dim-alt: light-dark(#8a8a90, #7d7d7d);
+  --pi-hook-green: light-dark(#2f7d4f, #00ff00);
+}
+
+/* An explicit choice pins `color-scheme`; `system` leaves the attribute off so
+   the `:root` default keeps tracking the OS. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/*
+ * shadcn/ui token bridge.
+ *
+ * The vendored primitives in `components/ui/**` speak in semantic tokens
+ * (`bg-background`, `text-muted-foreground`, `border-border`, `ring-ring`).
+ * They are bound to the terminal palette here so the components stay
+ * behaviourally upstream while looking like the rest of the app. Square corners
+ * (`--radius: 0px`) match the brainless terminal surfaces.
+ */
+:root {
+  --background: light-dark(#f7f7f8, #0d0d0d);
+  --foreground: light-dark(#1f2335, #c0caf5);
+  --card: light-dark(#ffffff, #0d0d0d);
+  --card-foreground: light-dark(#1f2335, #c0caf5);
+  --popover: light-dark(#ffffff, #16161a);
+  --popover-foreground: light-dark(#1f2335, #c0caf5);
+  --primary: light-dark(#b4472f, #cd694a);
+  --primary-foreground: light-dark(#ffffff, #0d0d0d);
+  --secondary: light-dark(#ececed, #2a2a2a);
+  --secondary-foreground: light-dark(#1f2335, #c0caf5);
+  --muted: light-dark(#ececed, #2a2a2a);
+  --muted-foreground: light-dark(#4b5068, #8b8fa3);
+  --accent: light-dark(#e6e6ec, #2a2a2a);
+  --accent-foreground: light-dark(#1f2335, #c0caf5);
+  --destructive: light-dark(#c0364c, #f7768e);
+  --destructive-foreground: light-dark(#ffffff, #0d0d0d);
+  --border: light-dark(#dcdde2, #2a2a2a);
+  --input: light-dark(#dcdde2, #2a2a2a);
+  --ring: light-dark(#b4472f, #cd694a);
+  --radius: 0px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--pi-bg);
+}
+
+body {
+  font-family: var(--font-mono);
+  color: var(--pi-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+/* The registry components expect a terminal input reset under this class:
+   no chrome of its own, transparent surface, block caret. */
+.term-input {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  font: inherit;
+  font-variant-ligatures: none;
+  caret-color: currentColor;
+}
+
+/* Keep the scrollback scrollbar in the terminal palette instead of the OS one. */
+* {
+  scrollbar-color: var(--pi-border) transparent;
+  scrollbar-width: thin;
+}
+
+/*
+ * Streamdown output in the terminal palette.
+ *
+ * Streamdown's own chrome targets a neutral design system (`bg-sidebar`,
+ * `border-border`, `text-muted-foreground`) that this app does not define, so
+ * the palette and spacing are set here. Kept as plain CSS rather than
+ * `components` overrides so Streamdown keeps owning link handling
+ * (`linkSafety`) and code-block behaviour.
+ */
+.pi-markdown a {
+  color: var(--pi-cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.pi-markdown > :first-child {
+  margin-top: 0;
+}
+
+.pi-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.pi-markdown p {
+  margin: 0.5em 0;
+}
+
+.pi-markdown h1,
+.pi-markdown h2,
+.pi-markdown h3,
+.pi-markdown h4,
+.pi-markdown h5,
+.pi-markdown h6 {
+  color: var(--pi-fg);
+  font-weight: 600;
+  margin: 0.9em 0 0.4em;
+}
+
+.pi-markdown ul {
+  list-style: disc;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.pi-markdown ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.pi-markdown li {
+  margin: 0.15em 0;
+}
+
+.pi-markdown blockquote {
+  border-left: 2px solid var(--pi-dim);
+  padding-left: 0.75em;
+  margin: 0.5em 0;
+  color: var(--pi-muted);
+}
+
+.pi-markdown code,
+.pi-markdown pre {
+  font-family: inherit;
+}
+
+.pi-markdown :not(pre) > code {
+  background: var(--pi-border);
+  color: var(--pi-yellow);
+  padding: 0.1em 0.3em;
+}
+
+.pi-markdown [data-streamdown="code-block"] {
+  border: 1px solid var(--pi-border);
+  background: var(--pi-popover);
+  border-radius: 0;
+  padding: 0.5rem 0.6rem;
+  margin: 0.6em 0;
+}
+
+.pi-markdown [data-streamdown="code-block-header"] {
+  color: var(--pi-codex-dim);
+}
+
+.pi-markdown table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+
+.pi-markdown th,
+.pi-markdown td {
+  border: 1px solid var(--pi-border);
+  padding: 0.2em 0.5em;
+  text-align: left;
+}
+
+.pi-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--pi-border);
+  margin: 0.8em 0;
+}
+
+/*
+ * shadcn Dialog motion. `components/ui/dialog.tsx` drops the `animate-in` /
+ * `animate-out` utilities (no `tw-animate-css` dependency), so the enter
+ * transition is defined here against Radix's `data-state`.
+ */
+@keyframes pi-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pi-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+[data-slot="dialog-overlay"][data-state="open"] {
+  animation: pi-overlay-in 0.12s ease-out;
+}
+
+[data-slot="dialog-content"][data-state="open"] {
+  animation: pi-content-in 0.14s ease-out;
+}
+
+[data-slot="dialog-overlay"] {
+  font-family: var(--font-mono);
+}
+
+/*
+ * Centering and the enter animation both use `transform`, so the animation
+ * overrides the resting rule while it plays and settles onto the identical
+ * value. Mixing in `translate` utilities here would compose two offsets and
+ * make the dialog visibly drift.
+ */
+[data-slot="dialog-content"] {
+  font-family: var(--font-mono);
+  transform: translate(-50%, -50%);
+}
