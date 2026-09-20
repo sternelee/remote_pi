@@ -25,6 +25,7 @@ import type {
   ClientMessage,
   ServerMessage,
   WireModel,
+  WireCommand,
   ActionName,
 } from "../protocol/types.js";
 
@@ -181,6 +182,7 @@ type SessionNewMsg = Extract<ClientMessage, { type: "session_new" }>;
 type ModelSetMsg = Extract<ClientMessage, { type: "model_set" }>;
 type ThinkingSetMsg = Extract<ClientMessage, { type: "thinking_set" }>;
 type ListModelsMsg = Extract<ClientMessage, { type: "list_models" }>;
+type ListCommandsMsg = Extract<ClientMessage, { type: "list_commands" }>;
 
 export function handleSessionCompact(
   ctx: ActionCtx | null,
@@ -290,6 +292,40 @@ export function handleListModels(
       models,
       current: current ? wireFromModel(current) : undefined,
     });
+  } catch (e) {
+    sender.send({
+      type: "error",
+      in_reply_to: msg.id,
+      code: "internal_error",
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/**
+ * Plan/58 (primitive A): enumerate the slash commands pi currently exposes
+ * (remote-pi's own, plus any registered by third-party plugins) so remote
+ * clients can offer a picker. Read-only — execution goes through the daemon's
+ * RPC `prompt` path (see the relay `user_message` handler in index.ts).
+ */
+export function handleListCommands(
+  pi: { getCommands?: () => Array<{ name: string; description?: string; source?: string }> } | null,
+  sender: ActionReplySender,
+  msg: ListCommandsMsg,
+): void {
+  try {
+    const commands: WireCommand[] = (pi?.getCommands?.() ?? []).map((command) => {
+      const source =
+        command.source === "extension" || command.source === "prompt" || command.source === "skill"
+          ? command.source
+          : "extension";
+      return {
+        name: command.name,
+        ...(command.description ? { description: command.description } : {}),
+        source,
+      };
+    });
+    sender.send({ type: "commands_list", in_reply_to: msg.id, commands });
   } catch (e) {
     sender.send({
       type: "error",

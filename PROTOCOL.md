@@ -228,6 +228,7 @@ Vocabulário curado de ações tipadas que o app mobile invoca sobre a sessão d
 | Set model | `model_set {provider, model_id}` | `ModelRegistry.find(...)` + `pi.setModel(model)` |
 | Set thinking | `thinking_set {level}` | `pi.setThinkingLevel(level)` |
 | List models | `list_models` | `ModelRegistry.getAvailable()` |
+| List commands | `list_commands` | `pi.getCommands()` |
 
 ### Wire — exemplos
 
@@ -273,6 +274,54 @@ O texto de raciocínio do modelo (thinking) trafega num canal próprio, separado
 - **History**: evento `thinking { ts, in_reply_to, text }` dentro do `session_history` (bloco `thinking` consolidado da `AssistantMessage`).
 
 `agent_done` (e o `cancelled` do turno) encerram o stream de raciocínio junto com o da resposta. Modelos sem reasoning simplesmente não emitem o canal.
+
+### Mensagens custom (plugins)
+
+Plugins podem emitir mensagens próprias via `pi.sendMessage` (`role:"custom"`). O remote-pi repassa o conteúdo sem interpretá-lo:
+
+- **Live**: `custom_message { custom_type, content, display, details? }` — `content` é string ou array de blocos; `custom_type` identifica o plugin; `display:false` indica payload destinado ao modelo (não à UI); `details?` é um payload tipado opcional do plugin.
+- **History**: evento `custom { ts, custom_type, content, display, details? }` dentro do `session_history`.
+
+Clientes devem renderizar por `custom_type`, sem exigir tipos conhecidos (fallback textual). Mensagens com `display:false` não aparecem no transcript.
+
+### Comandos slash remotos
+
+O app pode **enumerar** e **executar** comandos slash da sessão remota:
+
+- **Enumeração**: `list_commands { id }` → `commands_list { in_reply_to, commands: WireCommand[] }`, onde `WireCommand = { name, description?, source: "extension" | "prompt" | "skill" }` (espelha `pi.getCommands()`). Alimenta o picker do composer quando o rascunho começa com `/`.
+- **Execução**: um `user_message` cujo texto (após `trim`) começa com `/` é roteado, em modo daemon, pelo op `send` do supervisor — que escreve um `prompt` RPC e, portanto, **expande** comandos de extensão, prompt templates e skills (`/skill:name`). Fora do modo daemon, ou se o supervisor estiver indisponível, o texto cai no fluxo normal de mensagem (vai pro modelo como texto literal).
+
+Comandos builtin do TUI (`/compact`, `/model`, `/fork`, …) **não** são invocáveis por esse caminho — o SDK não expõe API genérica pra eles (ver abaixo); pra esses, use as ações tipadas.
+
+### Controles de UI da extensão (`extension_ui_request`)
+
+A extensão repassa os pedidos de UI do SDK (`ctx.ui.*`) como
+`extension_ui_request { id, method, … }`. São dois grupos:
+
+- **Interativos** (`select`, `confirm`, `input`, `editor`, `notify`): o app
+  responde com `extension_ui_response { id, value | confirmed | cancelled }`
+  (opcionalmente com o envelope `ask` do pi-ask).
+- **One-way** (`setStatus`, `setWidget`, `setTitle`, `set_editor_text`): mutam
+  chrome efêmero da sessão e **não** esperam resposta — o app não cria entrada
+  no transcript.
+
+```jsonc
+{ "type": "extension_ui_request", "id": "ui-1", "method": "setStatus",
+  "status_key": "goal", "status_text": "running" }
+{ "type": "extension_ui_request", "id": "ui-2", "method": "setWidget",
+  "widget_key": "todo", "widget_lines": ["- [ ] wire"], "widget_placement": "aboveEditor" }
+{ "type": "extension_ui_request", "id": "ui-3", "method": "setTitle", "title": "Build" }
+{ "type": "extension_ui_request", "id": "ui-4", "method": "set_editor_text", "text": "draft" }
+```
+
+Semântica dos one-way:
+
+- `setStatus`: `status_text` ausente ou vazio **remove** `status_key`; caso
+  contrário, define.
+- `setWidget`: `widget_lines` ausente ou vazio **remove** `widget_key`; caso
+  contrário, define o bloco (`widget_placement` default `"aboveEditor"`).
+- `setTitle`: define o título da janela/sessão.
+- `set_editor_text`: **substitui** o rascunho do composer (não envia nada).
 
 ### Side-effects
 

@@ -19,6 +19,7 @@ import type {
   Usage,
   WireImage,
 } from "../protocol/types";
+import { isUiControl } from "./ui_control";
 
 export interface DiffLine {
   type: "add" | "del" | "ctx";
@@ -62,6 +63,20 @@ export type TimelineEntry =
       id: string;
       text: string;
       streaming: boolean;
+      ts?: number;
+    }
+  | {
+      /**
+       * Plugin-authored message (`pi.sendMessage`, `role: "custom"`). Surfaced
+       * so extensions like pi-subagents / rpiv-todo can post to the timeline.
+       * `display: false` targets the model and is not rendered.
+       */
+      kind: "custom";
+      id: string;
+      customType: string;
+      text: string;
+      display: boolean;
+      details?: unknown;
       ts?: number;
     }
   | {
@@ -239,6 +254,13 @@ export function questionsOf(message: Extract<ServerMessage, { type: "extension_u
   body?: string;
   questions: QuestionView[];
 } {
+  // One-way display controls carry no question. The session layer folds them
+  // into `UiControlState` before the transcript sees them; this keeps the
+  // function total for any direct caller.
+  if (isUiControl(message)) {
+    return { method: message.method, title: "", questions: [] };
+  }
+
   if (message.ask && message.ask.questions.length > 0) {
     return {
       method: message.method,
@@ -543,6 +565,22 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
         ],
       };
 
+    case "custom_message":
+      return {
+        ...state,
+        entries: [
+          ...state.entries,
+          {
+            kind: "custom",
+            id: `custom-${state.entries.length}`,
+            customType: message.custom_type,
+            text: stringifyContent(message.content),
+            display: message.display !== false,
+            details: message.details,
+          },
+        ],
+      };
+
     case "cancelled":
       return {
         ...state,
@@ -575,6 +613,8 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
       };
 
     case "extension_ui_request": {
+      // One-way controls mutate ephemeral chrome, never the transcript.
+      if (isUiControl(message)) return state;
       const { method, title, body, questions } = questionsOf(message);
       return {
         ...state,
@@ -624,16 +664,52 @@ export function timelineFromHistory(
   for (const event of history.events) {
     state = applyMessage(state, stripTs(event));
   }
-  return state;
+  // Replayed history is settled: reasoning blocks are never mid-stream, and a
+  // replayed thinking chunk must not leave the transcript stuck "working".
+  return {
+    ...state,
+    working: false,
+    entries: state.entries.map((entry) =>
+      entry.kind === "thinking" ? { ...entry, streaming: false } : entry,
+    ),
+  };
 }
 
 /**
  * History events carry an extra `ts`; the reducer ignores timestamps (they are
- * for display only) so we drop it to keep `applyMessage` a single shape.
+ * for display only) so we drop it to keep `applyMessage` a single shape. The
+ * `thinking` and `custom` history variants are folded back onto their live
+ * wire counterparts so both paths share one reducer case.
  */
 function stripTs(event: SessionHistoryEvent): ServerMessage {
   const { ts: _ts, ...rest } = event;
+  if (rest.type === "thinking") {
+    return { type: "agent_thinking_chunk", in_reply_to: rest.in_reply_to, delta: rest.text };
+  }
+  if (rest.type === "custom") {
+    const { type: _type, ...custom } = rest;
+    return { type: "custom_message", ...custom } as ServerMessage;
+  }
   return rest as ServerMessage;
+}
+
+/** Flatten a custom message's content (string or content blocks) to text. */
+function stringifyContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object" && typeof (block as { text?: unknown }).text === "string") {
+          return (block as { text: string }).text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (content === undefined || content === null) return "";
+  return stringifyResult(content) ?? "";
 }
 
 function stringifyResult(result: unknown): string | undefined {

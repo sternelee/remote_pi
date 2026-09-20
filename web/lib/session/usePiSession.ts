@@ -26,6 +26,7 @@ import type {
   QueuedMessageItem,
   ServerMessage,
   ThinkingLevel,
+  WireCommand,
   WireImage,
   WireModel,
 } from "../protocol/types";
@@ -51,6 +52,12 @@ import {
   markAnswered,
   type TranscriptState,
 } from "./transcript";
+import {
+  emptyUiControl,
+  isUiControl,
+  reduceUiControl,
+  type UiControlState,
+} from "./ui_control";
 
 const PAIR_TIMEOUT_MS = 15_000;
 const HISTORY_LIMIT = 60;
@@ -157,12 +164,15 @@ export interface PiSession {
   currentModel?: WireModel;
   /** Model catalogue from `models_list`. */
   models: WireModel[];
+  commands: WireCommand[];
   /** Thinking level the Pi is on, from room meta or a local change. */
   thinking?: ThinkingLevel;
   /** Which typed action is in flight, for spinners. */
   busyAction?: ActionName;
   /** Drafts the Pi is holding while a turn runs. */
   queued: QueuedMessageItem[];
+  /** Ephemeral session chrome pushed by one-way extension UI controls. */
+  uiControl: UiControlState;
   /** Browser-local preferences (hide tool calls, voice disclosure ack). */
   prefs: Preferences;
   pairFromQr: (raw: string) => Promise<void>;
@@ -175,6 +185,7 @@ export interface PiSession {
   answerQuestion: (answer: QuestionAnswer) => void;
   /** Fetch the model catalogue (`list_models`). */
   listModels: () => void;
+  listCommands: () => void;
   setModel: (model: WireModel) => void;
   setThinking: (level: ThinkingLevel) => void;
   newSession: () => void;
@@ -201,10 +212,12 @@ export function usePiSession(): PiSession {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [model, setModelName] = useState<string | undefined>();
   const [models, setModels] = useState<WireModel[]>([]);
+  const [commands, setCommands] = useState<WireCommand[]>([]);
   const [currentModel, setCurrentModel] = useState<WireModel | undefined>();
   const [thinking, setThinkingState] = useState<ThinkingLevel | undefined>();
   const [busyAction, setBusyAction] = useState<ActionName | undefined>();
   const [queued, setQueuedState] = useState<QueuedMessageItem[]>([]);
+  const [uiControl, setUiControl] = useState<UiControlState>(emptyUiControl);
   const [prefs, setPrefsState] = useState<Preferences>(prefsFrom(undefined));
   const [room, setRoom] = useState<RoomDescriptor>({});
   /** Per-peer liveness, fed by `presence` / `peer_online` / `peer_offline`. */
@@ -212,7 +225,7 @@ export function usePiSession(): PiSession {
   /** Per-peer room inventory, fed by `rooms` / `room_announced` / `room_ended`. */
   const [roomsByPeer, setRoomsByPeer] = useState<Record<string, ProjectRoom[]>>({});
   /** In-flight request ids, so replies can be matched to what asked. */
-  const pendingRef = useRef<{ models?: string; actions: Map<string, ActionName> }>({
+  const pendingRef = useRef<{ models?: string; commands?: string; actions: Map<string, ActionName> }>({
     actions: new Map(),
   });
   /** Latest working flag, read by `sendMessage` without re-creating the callback. */
@@ -354,10 +367,13 @@ export function usePiSession(): PiSession {
             setCurrentModel(message.current);
             setModelName(message.current.name);
           }
-          pendingRef.current.models = undefined;
-          return;
-
-        case "action_ok":
+      pendingRef.current.models = undefined;
+      return;
+    case "commands_list":
+      setCommands(message.commands);
+      pendingRef.current.commands = undefined;
+      return;
+    case "action_ok":
         case "action_error": {
           const pending = pendingRef.current.actions.get(message.in_reply_to);
           pendingRef.current.actions.delete(message.in_reply_to);
@@ -388,6 +404,12 @@ export function usePiSession(): PiSession {
           return;
 
         default:
+          // One-way display controls (setStatus/setWidget/setTitle/
+          // set_editor_text) are ephemeral chrome, not transcript content.
+          if (isUiControl(message)) {
+            setUiControl((prev) => reduceUiControl(prev, message));
+            return;
+          }
           break;
       }
 
@@ -527,6 +549,7 @@ export function usePiSession(): PiSession {
       setThinkingState(undefined);
       setModels([]);
       setQueuedState([]);
+      setUiControl(emptyUiControl);
       setBusyAction(undefined);
       setRoom({});
       workingRef.current = false;
@@ -562,6 +585,8 @@ export function usePiSession(): PiSession {
               // model after a reconnect.
               pendingRef.current.models = uuid7();
               client.send({ type: "list_models", id: pendingRef.current.models });
+              pendingRef.current.commands = uuid7();
+              client.send({ type: "list_commands", id: pendingRef.current.commands });
             }
           },
           onMessage: handleMessage,
@@ -845,6 +870,14 @@ export function usePiSession(): PiSession {
     client.send({ type: "list_models", id });
   }, []);
 
+  const listCommands = useCallback(() => {
+    const client = clientRef.current;
+    if (!client) return;
+    const id = uuid7();
+    pendingRef.current.commands = id;
+    client.send({ type: "list_commands", id });
+  }, []);
+
   const setModel = useCallback(
     (next: WireModel) => {
       sendAction("model_set", {
@@ -925,9 +958,11 @@ export function usePiSession(): PiSession {
     model,
     currentModel,
     models,
+    commands,
     thinking,
     busyAction,
     queued,
+    uiControl,
     prefs,
     pairFromQr,
     selectPeer,
@@ -937,6 +972,7 @@ export function usePiSession(): PiSession {
     cancelTurn,
     answerQuestion,
     listModels,
+    listCommands,
     setModel,
     setThinking,
     newSession,

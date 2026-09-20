@@ -169,6 +169,28 @@ function parseGetStateResponse(line: string): { id?: string; isStreaming?: boole
 }
 
 /**
+ * Parses an RPC `extension_ui_request` line emitted by the Pi child.
+ *
+ * Pi's RPC UI context writes these frames to stdout for every `ctx.ui.*` call
+ * (select/confirm/input/editor/notify/setStatus/setWidget/setTitle/
+ * set_editor_text). The supervisor forwards them to the paired app over the UI
+ * socket; before this they were dropped, so a plugin's UI call hung forever.
+ */
+export function parseUiRequestLine(
+  line: string,
+): ({ type: "extension_ui_request"; id: string } & Record<string, unknown>) | null {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const o = obj as { type?: unknown; id?: unknown } | null;
+  if (!o || o.type !== "extension_ui_request" || typeof o.id !== "string") return null;
+  return o as { type: "extension_ui_request"; id: string } & Record<string, unknown>;
+}
+
+/**
  * CLI args for the daemon's `pi --mode rpc` child.
  *
  * `--continue` is the key bit: it resumes the **most recent** session for the
@@ -329,6 +351,28 @@ export class RpcChild extends EventEmitter {
   }
 
   /**
+   * Answers an RPC `extension_ui_request` the child emitted (select / confirm /
+   * input / editor / notify). The supervisor forwards these from a paired app
+   * over the UI socket; the response must carry the request's `id`. Returns
+   * false when the child isn't running.
+   */
+  sendUiResponse(response: {
+    id: string;
+    value?: string;
+    confirmed?: boolean;
+    cancelled?: boolean;
+  }): boolean {
+    if (!this.child || !this.child.stdin || this._state !== "running") return false;
+    const cmd = { type: "extension_ui_response", ...response };
+    try {
+      this.child.stdin.write(JSON.stringify(cmd) + "\n");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Asks the child to exit gracefully. Sends SIGTERM; if the child doesn't
    * exit within `timeoutMs`, escalates to SIGKILL. Resolves when the
    * `exit` event fires.
@@ -372,6 +416,8 @@ export class RpcChild extends EventEmitter {
         pending.resolve(this._busy);
       }
     }
+    const uiRequest = parseUiRequestLine(line);
+    if (uiRequest) this.emit("ui_request", uiRequest);
     this.emit("stdout", line);
   }
 

@@ -743,9 +743,9 @@ describe("contract fixtures: pair_*", () => {
     }
   });
 
-  test("all 32 fixture files present", () => {
+  test("all 35 fixture files present", () => {
     const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
-    expect(files).toHaveLength(32);
+    expect(files).toHaveLength(35);
   });
 });
 

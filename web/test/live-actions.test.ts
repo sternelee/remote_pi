@@ -211,7 +211,7 @@ describe.skipIf(!LIVE)("live interaction surface over the real relay", () => {
       expect(questions[0].type).toBe("multi");
       expect(questions[0].options.map((o) => o.value)).toEqual(["api", "web", "db"]);
 
-      const answer = buildQuestionAnswer(request!.id, request!.ask?.flow_id, questions, {
+      const answer = buildQuestionAnswer(request!.id, "ask" in request! ? request!.ask?.flow_id : undefined, questions, {
         selected: { targets: ["api", "db"] },
         custom: {},
       });

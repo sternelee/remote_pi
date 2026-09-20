@@ -162,6 +162,34 @@ describe("transcript rendering", () => {
     expect(html).toContain("thinking…");
   });
 
+  it("renders a plugin custom message with its label and details", () => {
+    const html = render([
+      {
+        type: "custom_message",
+        custom_type: "pi-subagents:status",
+        content: "Delegating to worker",
+        display: true,
+        details: { agent: "worker-1" },
+      },
+    ]);
+    expect(html).toContain("pi-subagents:status");
+    expect(html).toContain("Delegating to worker");
+    expect(html).toContain("worker-1");
+  });
+
+  it("hides custom messages flagged display:false", () => {
+    const html = render([
+      {
+        type: "custom_message",
+        custom_type: "rpiv-todo",
+        content: "internal bookkeeping",
+        display: false,
+      },
+    ]);
+    expect(html).not.toContain("internal bookkeeping");
+    expect(html).not.toContain("rpiv-todo");
+  });
+
   it("timelineFromHistory produces a renderable state", () => {
     const history = fixture<Extract<ServerMessage, { type: "session_history" }>>("session_history");
     const html = renderToStaticMarkup(

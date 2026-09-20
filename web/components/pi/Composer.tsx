@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CodexPrompt } from "@/components/brainless/codex/codex-prompt";
-import type { WireImage, WireModel } from "@/lib/protocol/types";
+import type { WireCommand, WireImage, WireModel } from "@/lib/protocol/types";
 import { useVoiceInput } from "@/lib/session/voice";
 
 /**
@@ -27,6 +27,17 @@ import { useVoiceInput } from "@/lib/session/voice";
 const MAX_IMAGE_EDGE = 1568;
 const JPEG_QUALITY = 0.8;
 
+/** Query text for the slash-command picker: `null` unless the draft is a bare `/word`. */
+export function commandQueryFor(draft: string): string | null {
+  return draft.startsWith("/") && !/\s/.test(draft) ? draft.slice(1).toLowerCase() : null;
+}
+
+/** Commands whose name contains the query; empty when the picker is closed. */
+export function filterCommands(commands: WireCommand[], query: string | null): WireCommand[] {
+  if (query === null) return [];
+  return commands.filter((command) => command.name.toLowerCase().includes(query));
+}
+
 export function Composer({
   disabled,
   working,
@@ -34,8 +45,11 @@ export function Composer({
   currentModel,
   directory,
   queuedText,
+  editorText,
   voiceNoticeAck,
   onAckVoiceNotice,
+  commands,
+  onListCommands,
   onSend,
   onInterrupt,
   onQueue,
@@ -48,9 +62,18 @@ export function Composer({
   directory: string;
   /** Draft the Pi is holding for this session, if any. */
   queuedText?: string;
+  /**
+   * Composer draft pushed by `set_editor_text`. `seq` bumps on every push so a
+   * repeated identical text still replaces the draft.
+   */
+  editorText?: { text: string; seq: number };
   /** Whether the voice privacy disclosure has been acknowledged. */
   voiceNoticeAck?: boolean;
   onAckVoiceNotice?: () => void;
+  /** Slash commands advertised by the Pi (from `pi.getCommands()`). */
+  commands?: WireCommand[];
+  /** Ask the Pi to refresh its command catalogue. */
+  onListCommands?: () => void;
   onSend: (text: string, images?: WireImage[]) => void;
   onInterrupt: () => void;
   onQueue: (text: string) => void;
@@ -61,6 +84,25 @@ export function Composer({
   const [attachError, setAttachError] = useState<string | null>(null);
   const [voiceNotice, setVoiceNotice] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [commandIndex, setCommandIndex] = useState(0);
+
+  // A `set_editor_text` push replaces the draft. Keyed on `seq` so the same
+  // text pushed twice still lands (and a local edit is overwritten on the next
+  // push, matching the app).
+  useEffect(() => {
+    if (editorText) setDraft(editorText.text);
+  }, [editorText?.seq]);
+  const commandQuery = commandQueryFor(draft);
+  const commandMatches = filterCommands(commands ?? [], commandQuery);
+  const commandOpen = commandQuery !== null && commandMatches.length > 0;
+  const selectedCommand = commandOpen
+    ? commandMatches[Math.min(commandIndex, commandMatches.length - 1)]
+    : undefined;
+
+  function insertCommand(name: string) {
+    setDraft(`/${name} `);
+    setCommandIndex(0);
+  }
 
   // Dictation lands in the draft for review; it is never sent on its own, which
   // is the app's rule too (a misheard word should not become a turn).
@@ -144,13 +186,67 @@ export function Composer({
         </div>
       ) : null}
 
+      {commandOpen ? (
+        <div
+          role="listbox"
+          aria-label="Commands"
+          className="mb-1 flex max-h-40 flex-col overflow-y-auto border font-mono text-[12px]"
+          style={{ borderColor: "var(--pi-border)", background: "var(--pi-popover)" }}
+        >
+          {commandMatches.map((command) => (
+            <button
+              key={command.name}
+              type="button"
+              role="option"
+              aria-selected={command === selectedCommand}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                insertCommand(command.name);
+              }}
+              className="flex items-baseline gap-2 px-2 py-0.5 text-left"
+              style={{
+                background:
+                  command === selectedCommand
+                    ? "color-mix(in srgb, var(--pi-rose) 12%, transparent)"
+                    : "transparent",
+                color: command === selectedCommand ? "var(--pi-fg)" : "var(--pi-muted)",
+              }}
+            >
+              <span style={{ color: "var(--pi-rose)" }}>/{command.name}</span>
+              <span className="truncate" style={{ color: "var(--pi-dim)" }}>
+                {command.source}
+                {command.description ? ` · ${command.description}` : ""}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <CodexPrompt
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          setCommandIndex(0);
+          if (next.startsWith("/") && (commands ?? []).length === 0) onListCommands?.();
+        }}
         onKeyDown={(event) => {
           // `isComposing` guards CJK/IME input: the Enter that confirms a
           // candidate must not also send the message.
           if (event.nativeEvent.isComposing) return;
+          if (commandOpen && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            const delta = event.key === "ArrowDown" ? 1 : -1;
+            setCommandIndex((current) => {
+              const count = commandMatches.length;
+              return count === 0 ? 0 : (current + delta + count) % count;
+            });
+            return;
+          }
+          if (commandOpen && (event.key === "Tab" || event.key === "Enter")) {
+            event.preventDefault();
+            if (selectedCommand) insertCommand(selectedCommand.name);
+            return;
+          }
           if (event.key === "Enter") {
             event.preventDefault();
             submit();

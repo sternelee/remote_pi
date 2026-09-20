@@ -10,6 +10,7 @@ import { SessionInfo } from "./SessionInfo";
 import { SessionMenu } from "./SessionMenu";
 import { SettingsPanel } from "./SettingsPanel";
 import { Transcript } from "./Transcript";
+import { SessionTitle, StatusList, WidgetList } from "./UiChrome";
 
 const FG = "var(--pi-fg)";
 const DIM = "var(--pi-dim)";
@@ -49,6 +50,13 @@ export function SessionScreen({
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [entries, working]);
+
+  // `setTitle` reflects the Pi's session title in the browser tab; clearing it
+  // restores the app's default. Guarded for SSR, where there is no document.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = session.uiControl.title || "Remote Pi";
+  }, [session.uiControl.title]);
 
   const peerLabel = peer ? (peer.nickname ?? peer.session_name) : "no peer";
 
@@ -152,6 +160,11 @@ export function SessionScreen({
         </div>
       ) : null}
 
+      {/* ── ephemeral extension UI chrome ───────────────────────────────── */}
+      <SessionTitle title={session.uiControl.title} />
+      <StatusList statuses={session.uiControl.statuses} />
+      <WidgetList widgets={session.uiControl.widgets} />
+
       <QuickActions
         open={showActions}
         onOpenChange={setShowActions}
@@ -245,8 +258,11 @@ export function SessionScreen({
           currentModel={session.currentModel}
           directory={peerLabel}
           queuedText={session.queued[0]?.text}
+          editorText={session.uiControl.editorText}
           voiceNoticeAck={session.prefs.voiceNoticeAck}
           onAckVoiceNotice={() => session.setPrefs({ voiceNoticeAck: true })}
+          commands={session.commands}
+          onListCommands={session.listCommands}
           onQueue={session.setQueued}
           onSend={session.sendMessage}
           onInterrupt={() => {

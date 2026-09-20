@@ -1,0 +1,1 @@
+{"type":"commands_list","in_reply_to":"018f9c2a-7b1e-7000-9a3b-1c2d3e4f5a6e","commands":[{"name":"remote-pi","description":"Manage the remote connection","source":"extension"},{"name":"plan","source":"prompt"},{"name":"skill:git","source":"skill"}]}

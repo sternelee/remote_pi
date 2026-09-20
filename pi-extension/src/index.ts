@@ -83,6 +83,7 @@ import {
   handleModelSet,
   handleThinkingSet,
   handleListModels,
+  handleListCommands,
   type ActionCtx,
 } from "./actions/handlers.js";
 import { ensureModelRegistry } from "./actions/registry.js";
@@ -96,8 +97,10 @@ import {
 import { acquireCwdLock, type AcquiredLock } from "./session/cwd_lock.js";
 import { addDaemon, listDaemons, removeDaemon } from "./daemon/registry.js";
 import { callSupervisor, supervisorOnline, SupervisorOfflineError } from "./daemon/client.js";
+import { daemonIdForCwd } from "./daemon/id.js";
 import type { ControlRequest, DaemonInfo } from "./daemon/control_protocol.js";
 import { EXIT_DAEMON_FRESH_SESSION } from "./daemon/rpc_child.js";
+import { SupervisorUiBridge, type UiFrame } from "./daemon/ui_bridge.js";
 import { installService, uninstallService, linkCliBinaries, unlinkCliBinaries, LAUNCHD_LABEL, SYSTEMD_UNIT, WINDOWS_TASK_NAME } from "./daemon/install.js";
 import {
   defaultAgentName,
@@ -1106,6 +1109,15 @@ let _pi: ExtensionAPI | null = null;
 // extension factory wires it (and null if the SDK exposes no events bus).
 let _extensionUiBridge: ExtensionUiBridge | null = null;
 
+// Plan/58 primitive B — daemon-mode bridge to the supervisor's UI socket. It
+// receives the RPC child's `ctx.ui.*` frames and writes the app's answers back.
+// Only created in daemon mode (REMOTE_PI_DAEMON=1); null elsewhere.
+let _supervisorUiBridge: SupervisorUiBridge | null = null;
+// Interactive `ui:` requests awaiting an app answer, keyed by the relay id
+// (`ui:<rpcId>`). Replayed on session_sync so a late-connecting app still sees
+// the pending dialog; removed when the app responds.
+const _pendingUiRequests = new Map<string, ServerMessage>();
+
 let _stopAutoListener: (() => void) | null = null;
 
 // Cached keypair (loaded once, reused across start/pair cycles)
@@ -1219,6 +1231,150 @@ function _broadcastToActive(msg: ServerMessage): void {
 /** Returns true when at least one owner is attached. Derived `paired` UX. */
 function _anyPeerActive(): boolean {
   return _activePeers.size > 0;
+}
+
+// ── Plan/58 primitive B — ctx.ui.* forwarding (daemon mode) ──────────────────
+//
+// The supervisor forwards each `ctx.ui.*` call the RPC child emits as an
+// `extension_ui_request` frame over its UI socket. These helpers map the frame
+// onto the relay's `ExtensionUiRequestWire` vocabulary (snake_case), namespace
+// the id (`ui:<rpcId>`) so answers can be routed back to the RPC child instead
+// of the pi-ask bridge, and cancel immediately when no app is attached so the
+// plugin's `ctx.ui.*` call never hangs forever.
+
+const _INTERACTIVE_UI_METHODS = new Set(["select", "confirm", "input", "editor"]);
+
+function _str(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function _strArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+/** Map one supervisor UI frame onto a relay `extension_ui_request`. Returns
+ *  null for a method the relay protocol doesn't know. Exported for tests. */
+/**
+ * Builds the RPC `extension_ui_response` payload for an answer coming from the
+ * app. The app's degraded prompt answers every method with a string label, but
+ * the RPC `confirm` method expects a boolean, so translate `Yes`/`No` here.
+ */
+export function _uiResponseFor(
+  msg: { value?: unknown; confirmed?: unknown; cancelled?: unknown; ask?: unknown },
+  method?: string,
+): { value?: string; confirmed?: boolean; cancelled?: boolean } {
+  if ("cancelled" in msg && msg.cancelled === true) return { cancelled: true };
+  if ("confirmed" in msg && typeof msg.confirmed === "boolean") {
+    return { confirmed: msg.confirmed };
+  }
+  if ("value" in msg && typeof msg.value === "string") {
+    if (method === "confirm") return { confirmed: msg.value === "Yes" };
+    return { value: msg.value };
+  }
+  return {};
+}
+
+export function _mapSupervisorUiFrame(frame: UiFrame, id: string): ServerMessage | null {
+  const method = frame["method"];
+  switch (method) {
+    case "select":
+      return {
+        type: "extension_ui_request",
+        id,
+        method: "select",
+        title: _str(frame["title"]),
+        options: _strArray(frame["options"]),
+      };
+    case "confirm":
+      return {
+        type: "extension_ui_request",
+        id,
+        method: "confirm",
+        title: _str(frame["title"]),
+        message: _str(frame["message"]),
+      };
+    case "input": {
+      const placeholder = frame["placeholder"];
+      return typeof placeholder === "string"
+        ? { type: "extension_ui_request", id, method: "input", title: _str(frame["title"]), placeholder }
+        : { type: "extension_ui_request", id, method: "input", title: _str(frame["title"]) };
+    }
+    case "editor": {
+      const prefill = frame["prefill"];
+      return typeof prefill === "string"
+        ? { type: "extension_ui_request", id, method: "editor", title: _str(frame["title"]), prefill }
+        : { type: "extension_ui_request", id, method: "editor", title: _str(frame["title"]) };
+    }
+    case "notify": {
+      const notifyType = frame["notifyType"];
+      const base = { type: "extension_ui_request" as const, id, method: "notify" as const, message: _str(frame["message"]) };
+      return notifyType === "info" || notifyType === "warning" || notifyType === "error"
+        ? { ...base, notify_type: notifyType }
+        : base;
+    }
+    case "setStatus": {
+      const statusText = frame["statusText"];
+      const base = {
+        type: "extension_ui_request" as const,
+        id,
+        method: "setStatus" as const,
+        status_key: _str(frame["statusKey"]),
+      };
+      return typeof statusText === "string" ? { ...base, status_text: statusText } : base;
+    }
+    case "setWidget": {
+      const lines = frame["widgetLines"];
+      const placement = frame["widgetPlacement"];
+      const base = {
+        type: "extension_ui_request" as const,
+        id,
+        method: "setWidget" as const,
+        widget_key: _str(frame["widgetKey"]),
+      };
+      const withLines = Array.isArray(lines)
+        ? { ...base, widget_lines: _strArray(lines) }
+        : base;
+      return placement === "aboveEditor" || placement === "belowEditor"
+        ? { ...withLines, widget_placement: placement }
+        : withLines;
+    }
+    case "setTitle":
+      return { type: "extension_ui_request", id, method: "setTitle", title: _str(frame["title"]) };
+    case "set_editor_text":
+      return { type: "extension_ui_request", id, method: "set_editor_text", text: _str(frame["text"]) };
+    default:
+      return null;
+  }
+}
+
+/** Handle one `ctx.ui.*` frame from the RPC child. Interactive methods wait for
+ *  an app answer (and cancel immediately when none is attached); display-only
+ *  methods are fire-and-forget. Exported for tests. */
+export function _handleSupervisorUiFrame(frame: UiFrame): void {
+  const relayId = `ui:${frame.id}`;
+  const msg = _mapSupervisorUiFrame(frame, relayId);
+  if (!msg) return;
+  const method = typeof frame["method"] === "string" ? frame["method"] : "";
+  if (_INTERACTIVE_UI_METHODS.has(method)) {
+    if (!_anyPeerActive()) {
+      // No app to answer: cancel so the plugin's call resolves instead of
+      // hanging until its own timeout.
+      _supervisorUiBridge?.respond(frame.id, { cancelled: true });
+      return;
+    }
+    _pendingUiRequests.set(relayId, msg);
+    _broadcastToActive(msg);
+    return;
+  }
+  // Display-only: nothing to answer, and no point buffering for a late peer.
+  if (!_anyPeerActive()) return;
+  _broadcastToActive(msg);
+}
+
+/** Test-only: inject a supervisor UI bridge so frame handling can be observed
+ *  without a live supervisor. */
+export function _setSupervisorUiBridgeForTest(bridge: SupervisorUiBridge | null): void {
+  _supervisorUiBridge = bridge;
 }
 
 /**
@@ -2236,8 +2392,33 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     if (m.role === "user" && _anyPeerActive()) {
       _broadcastConsumedSteerForUserContent(m.content);
     }
-    if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
+    if (
+      m.role === "user" ||
+      m.role === "assistant" ||
+      m.role === "toolResult" ||
+      m.role === "custom"
+    ) {
       _messageBuffer.push(m as unknown as BufferMsg);
+    }
+    // Plan/58: forward plugin-authored custom messages (`pi.sendMessage`,
+    // role:"custom"). Previously dropped here, so plugin output (todo
+    // overlays, subagent progress, …) stayed in the desktop TUI. `display`
+    // false means the message targets the model, not the UI — clients may
+    // choose to hide it, so the flag is forwarded rather than filtered.
+    if (m.role === "custom" && _anyPeerActive()) {
+      const cm = m as unknown as {
+        customType?: unknown;
+        content?: unknown;
+        display?: unknown;
+        details?: unknown;
+      };
+      _broadcastToActive({
+        type: "custom_message",
+        custom_type: String(cm.customType ?? ""),
+        content: cm.content ?? "",
+        display: cm.display !== false,
+        ...(cm.details === undefined ? {} : { details: cm.details }),
+      });
     }
     // Forward a failed turn to connected owners. Without this the app just
     // hangs with no response when the provider errors (e.g. the TUI's
@@ -2354,6 +2535,18 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     if (!_extensionUiBridge) {
       _extensionUiBridge = createExtensionUiBridge(pi, _broadcastToActive);
     }
+    // Plan/58 primitive B — daemon mode only: attach to the supervisor's UI
+    // socket so `ctx.ui.*` calls from RPC-mode plugins reach the paired app.
+    // A session replacement disposes the previous bridge (session_shutdown) and
+    // this rebinds a fresh one for the new session.
+    if (process.env["REMOTE_PI_DAEMON"] === "1") {
+      const cwd = "cwd" in ctx && typeof ctx.cwd === "string" ? ctx.cwd : process.cwd();
+      _supervisorUiBridge?.close();
+      const bridge = new SupervisorUiBridge();
+      bridge.onFrame(_handleSupervisorUiFrame);
+      bridge.connect(daemonIdForCwd(cwd), cwd);
+      _supervisorUiBridge = bridge;
+    }
     // Rearm a reused-but-disposed instance. The session_shutdown teardown (below)
     // sets _disposed=true assuming the host re-evaluates THIS module fresh for the
     // replacement session, yielding a new instance with _disposed=false. Some hosts
@@ -2456,6 +2649,11 @@ const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
     // module instances create their bridge in the factory.
     _extensionUiBridge?.dispose();
     _extensionUiBridge = null;
+    // Primitive B: drop the supervisor UI socket + any pending interactive
+    // requests so a replaced session doesn't answer a stale RPC child.
+    _supervisorUiBridge?.close();
+    _supervisorUiBridge = null;
+    _pendingUiRequests.clear();
     // Drop captured ctxs immediately. On module-reuse hosts the same instance
     // survives session replacement; leaving `_lastCtx` pointing at the now-
     // stale command ctx is what crashed pi in _refreshFooter on peer reconnect
@@ -4419,6 +4617,17 @@ export function _routeClientMessageFrom(
     return;
   }
   if (msg.type === "extension_ui_response") {
+    // Primitive B: `ui:`-prefixed ids belong to an RPC child's `ctx.ui.*`
+    // request; route the answer to the supervisor bridge. Checked BEFORE the
+    // pi-ask bridge, whose ids are bare flowIds and must not see these.
+    if (msg.id.startsWith("ui:")) {
+      const pending = _pendingUiRequests.get(msg.id);
+      const method =
+        pending && pending.type === "extension_ui_request" ? pending.method : undefined;
+      _supervisorUiBridge?.respond(msg.id.slice(3), _uiResponseFor(msg, method));
+      _pendingUiRequests.delete(msg.id);
+      return;
+    }
     _extensionUiBridge?.respond(msg);
     return;
   }
@@ -4466,6 +4675,42 @@ export function _routeClientMessageFrom(
           const detail = error instanceof Error ? error.message : String(error);
           console.error(`[remote-pi] failed delivering image message id=${msg.id}: ${detail}`);
         });
+        break;
+      }
+
+      // Plan/58 (primitive A): a remote "/command" must run through pi's command
+      // dispatcher, not the model. `pi.sendUserMessage` (used by _wakeAgent)
+      // deliberately passes `expandPromptTemplates:false`, so it would send the
+      // literal text. In daemon mode the supervisor owns the RPC channel and its
+      // `send` op writes an RPC `prompt`, which DOES expand commands/templates.
+      // Fall back to a normal message when the supervisor is unavailable so the
+      // text still reaches the agent instead of being dropped.
+      const commandText = msg.text.trim();
+      if (commandText.startsWith("/") && process.env["REMOTE_PI_DAEMON"] === "1") {
+        void (async () => {
+          try {
+            await callSupervisor({
+              op: "send",
+              id: daemonIdForCwd(_lastCtx?.cwd ?? process.cwd()),
+              text: msg.text,
+            });
+            _echoUserMessage(msg, false);
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            console.error(`[remote-pi] command via supervisor failed id=${msg.id}: ${detail}`);
+            const wake = _wakeAgent(msg.text, `app user_message id=${msg.id}`, "steer");
+            if (!wake.ok) {
+              sender.send({
+                type: "error",
+                code: "internal_error",
+                in_reply_to: msg.id,
+                message: `Agent rejected incoming message: ${wake.detail}`,
+              });
+              return;
+            }
+            _echoUserMessage(msg, false);
+          }
+        })();
         break;
       }
 
@@ -4615,6 +4860,11 @@ export function _routeClientMessageFrom(
         msg,
       );
       break;
+    case "list_commands":
+      // Plan/58 (primitive A): enumerate slash commands (remote-pi's own +
+      // prompt templates + skills) so the app can offer a command picker.
+      handleListCommands(_pi, sender, msg);
+      break;
   }
 }
 
@@ -4685,6 +4935,13 @@ function _handleSessionSync(
   // pop a modal on owner B. Flows past FLOW_TTL_MS are already gone from the
   // bridge, so an abandoned flow is never resurrected.
   for (const req of _extensionUiBridge?.pendingRequests() ?? []) {
+    sender.send(req);
+  }
+
+  // Primitive B — replay pending `ctx.ui.*` dialogs (same rationale: the
+  // broadcast fired before this peer connected). Per-sender like the rest of
+  // this handler so owner A's sync can't pop a modal on owner B.
+  for (const req of _pendingUiRequests.values()) {
     sender.send(req);
   }
 }
@@ -5011,6 +5268,23 @@ export function _mapAgentMessagesToEvents(
           ? { ts, type: "tool_result", tool_call_id: tcid, error: text }
           : { ts, type: "tool_result", tool_call_id: tcid, result: text },
       );
+    } else if (m.role === "custom") {
+      // Plan/58: replay plugin-authored custom messages so a re-sync rebuilds
+      // them, matching the live `custom_message` broadcast below.
+      const cm = m as unknown as {
+        customType?: unknown;
+        content?: unknown;
+        display?: unknown;
+        details?: unknown;
+      };
+      events.push({
+        ts,
+        type: "custom",
+        custom_type: String(cm.customType ?? ""),
+        content: cm.content ?? "",
+        display: cm.display !== false,
+        ...(cm.details === undefined ? {} : { details: cm.details }),
+      });
     }
   }
 

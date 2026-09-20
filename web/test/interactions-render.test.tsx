@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { Command } from "../components/ui/command";
-import { Composer } from "../components/pi/Composer";
+import { Composer, commandQueryFor, filterCommands } from "../components/pi/Composer";
 import {
   QuickActions,
   NewSessionConfirm,
@@ -23,11 +23,35 @@ import { SessionInfo } from "../components/pi/SessionInfo";
 import { SessionMenu } from "../components/pi/SessionMenu";
 import { SettingsPanel } from "../components/pi/SettingsPanel";
 import { Transcript } from "../components/pi/Transcript";
-import type { WireModel } from "../lib/protocol/types";
+import { SessionTitle, StatusList, WidgetList } from "../components/pi/UiChrome";
+import type { WireCommand, WireModel } from "../lib/protocol/types";
 import { addLocalUserMessage, applyMessage, emptyTranscript, questionsOf } from "../lib/session/transcript";
 import type { ServerMessage } from "../lib/protocol/types";
 
 const noop = () => {};
+
+describe("composer command picker", () => {
+  const commands: WireCommand[] = [
+    { name: "remote-pi", description: "Manage the remote connection", source: "extension" },
+    { name: "plan", source: "prompt" },
+    { name: "skill:git", source: "skill" },
+  ];
+
+  it("derives the query only from a bare slash draft", () => {
+    expect(commandQueryFor("/")).toBe("");
+    expect(commandQueryFor("/plan")).toBe("plan");
+    expect(commandQueryFor("/PLAN")).toBe("plan");
+    expect(commandQueryFor("/plan extra")).toBeNull();
+    expect(commandQueryFor("hello")).toBeNull();
+  });
+
+  it("filters commands by name and stays closed without a query", () => {
+    expect(filterCommands(commands, null)).toEqual([]);
+    expect(filterCommands(commands, "plan")).toEqual([commands[1]]);
+    expect(filterCommands(commands, "pi")).toEqual([commands[0]]);
+    expect(filterCommands(commands, "zzz")).toEqual([]);
+  });
+});
 
 const MULTI_PROMPT = {
   type: "extension_ui_request",
@@ -88,7 +112,7 @@ function renderPrompt(message: Extract<ServerMessage, { type: "extension_ui_requ
   return renderToStaticMarkup(
     <QuestionPrompt
       requestId={message.id}
-      flowId={message.ask?.flow_id}
+      flowId={"ask" in message ? message.ask?.flow_id : undefined}
       title={title}
       body={body}
       questions={questions}
@@ -630,5 +654,40 @@ describe("dialog sizing", () => {
     // operator) and used to let the dialog overflow the phone viewport.
     expect(html).toContain("w-[calc(100%_-_2rem)]");
     expect(html).not.toContain("max-w-[calc(100%-2rem)]");
+  });
+});
+
+describe("ui chrome", () => {
+  it("renders the session title as a dim chip", () => {
+    const html = renderToStaticMarkup(<SessionTitle title="Build remote_pi" />);
+    expect(html).toContain("title: Build remote_pi");
+  });
+
+  it("renders nothing for empty props", () => {
+    expect(renderToStaticMarkup(<SessionTitle />)).toBe("");
+    expect(renderToStaticMarkup(<StatusList statuses={{}} />)).toBe("");
+    expect(renderToStaticMarkup(<WidgetList widgets={{}} />)).toBe("");
+  });
+
+  it("renders one line per status entry", () => {
+    const html = renderToStaticMarkup(
+      <StatusList statuses={{ goal: "running", tests: "green" }} />,
+    );
+    expect(html).toContain("goal:");
+    expect(html).toContain("running");
+    expect(html).toContain("tests:");
+    expect(html).toContain("green");
+  });
+
+  it("renders each widget's label and its lines", () => {
+    const html = renderToStaticMarkup(
+      <WidgetList
+        widgets={{ todo: { lines: ["- [ ] wire", "- [x] pair"], placement: "aboveEditor" } }}
+      />,
+    );
+    expect(html).toContain("todo");
+    expect(html).toContain("- [ ] wire");
+    expect(html).toContain("- [x] pair");
+    expect(html).toContain("whitespace-pre-wrap");
   });
 });

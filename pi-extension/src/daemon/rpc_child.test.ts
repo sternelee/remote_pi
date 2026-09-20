@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RpcChild, busyTransition, resolvePiBin, resolvePiSpawn, _npmShimTarget, rpcSpawnArgs, type RpcChildExitEvent } from "./rpc_child.js";
+import { RpcChild, busyTransition, parseUiRequestLine, resolvePiBin, resolvePiSpawn, _npmShimTarget, rpcSpawnArgs, type RpcChildExitEvent } from "./rpc_child.js";
 
 /**
  * Regression for the orphaned-daemon bug: a deliberate `stop()` kills the
@@ -151,6 +151,64 @@ describe("busyTransition (stream markers)", () => {
     expect(busyTransition('{"type":"session_info_changed"}')).toBeNull();
     expect(busyTransition('{"type":"response","command":"prompt"}')).toBeNull();
     expect(busyTransition("not json")).toBeNull();
+  });
+});
+
+describe("parseUiRequestLine (primitive B — ctx.ui.* frames)", () => {
+  test("parses a valid select frame and preserves its fields", () => {
+    const line = JSON.stringify({
+      type: "extension_ui_request",
+      id: "ui-1",
+      method: "select",
+      title: "Pick one",
+      options: ["a", "b"],
+    });
+    const frame = parseUiRequestLine(line);
+    expect(frame).not.toBeNull();
+    expect(frame?.id).toBe("ui-1");
+    expect(frame?.method).toBe("select");
+    expect(frame?.options).toEqual(["a", "b"]);
+  });
+
+  test("parses display-only methods (setStatus/setWidget/setTitle)", () => {
+    expect(parseUiRequestLine('{"type":"extension_ui_request","id":"x","method":"setStatus","statusKey":"k","statusText":"v"}')?.method).toBe("setStatus");
+    expect(parseUiRequestLine('{"type":"extension_ui_request","id":"x","method":"setTitle","title":"t"}')?.method).toBe("setTitle");
+    expect(parseUiRequestLine('{"type":"extension_ui_request","id":"x","method":"set_editor_text","text":"t"}')?.method).toBe("set_editor_text");
+  });
+
+  test("returns null for a non-UI type", () => {
+    expect(parseUiRequestLine('{"type":"message_start"}')).toBeNull();
+    expect(parseUiRequestLine('{"type":"extension_ui_response","id":"x"}')).toBeNull();
+  });
+
+  test("returns null for bad JSON", () => {
+    expect(parseUiRequestLine("{not-json}")).toBeNull();
+    expect(parseUiRequestLine("")).toBeNull();
+  });
+
+  test("returns null when the id is missing or not a string", () => {
+    expect(parseUiRequestLine('{"type":"extension_ui_request","method":"select"}')).toBeNull();
+    expect(parseUiRequestLine('{"type":"extension_ui_request","id":123,"method":"select"}')).toBeNull();
+  });
+});
+
+describe("RpcChild — ui_request event", () => {
+  let dir: string;
+  afterEach(() => {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  test("emits ui_request for extension_ui_request lines (before stdout)", () => {
+    dir = mkdtempSync(join(tmpdir(), "pi-uir-"));
+    const child = new RpcChild({ piBin: "/usr/bin/true", extensionPath: "/x", cwd: dir });
+    const seen: Array<{ id: string }> = [];
+    child.on("ui_request", (f: { id: string }) => seen.push(f));
+    child._ingestStdoutForTest('{"type":"extension_ui_request","id":"ui-9","method":"confirm","title":"ok?"}');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.id).toBe("ui-9");
+    // A normal line must not emit ui_request.
+    child._ingestStdoutForTest('{"type":"message_start"}');
+    expect(seen).toHaveLength(1);
   });
 });
 

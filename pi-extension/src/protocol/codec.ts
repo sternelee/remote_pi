@@ -9,6 +9,8 @@ const SERVER_TYPES = new Set<ServerMessage["type"]>([
   "agent_thinking_chunk",
   "agent_done",
   "agent_message",
+  // Plan/58 — plugin-authored custom messages (role:"custom").
+  "custom_message",
   "tool_request",
   "tool_result",
   "error",
@@ -16,6 +18,7 @@ const SERVER_TYPES = new Set<ServerMessage["type"]>([
   "pong",
   "bye",
   "session_history",
+  "commands_list",
   // Plan/57 — interactive extension prompt (ask_user via pi-ask).
   "extension_ui_request",
 ]);

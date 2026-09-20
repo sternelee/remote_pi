@@ -28,7 +28,11 @@ export type ExtensionUiMethod =
   | "confirm"
   | "input"
   | "editor"
-  | "notify";
+  | "notify"
+  | "setStatus"
+  | "setWidget"
+  | "setTitle"
+  | "set_editor_text";
 
 export type AskQuestionWireType = "single" | "multi" | "preview";
 
@@ -137,6 +141,33 @@ export type ExtensionUiRequestWire =
       method: "notify";
       message: string;
       notify_type?: "info" | "warning" | "error";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setStatus";
+      status_key: string;
+      status_text?: string;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setWidget";
+      widget_key: string;
+      widget_lines?: string[];
+      widget_placement?: "aboveEditor" | "belowEditor";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setTitle";
+      title: string;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "set_editor_text";
+      text: string;
     };
 
 /** ClientMessage: response to an extension_ui_request. Mirrors
@@ -198,6 +229,11 @@ export type ClientMessage =
   | { type: "model_set"; id: string; provider: string; model_id: string }
   | { type: "thinking_set"; id: string; level: ThinkingLevel }
   | { type: "list_models"; id: string }
+  // Plan/58 (primitive A) — enumerate the slash commands the Pi exposes
+  // (built-in prompt templates + extension/skill commands). The app uses the
+  // reply to offer a command palette; execution reuses `user_message` text
+  // starting with "/", which the daemon routes through pi's command dispatcher.
+  | { type: "list_commands"; id: string }
   // Plan/57 — interactive extension prompt response (ask_user via pi-ask).
   // Mirrors RpcExtensionUIResponse; the optional `ask` envelope carries
   // pi-ask's structured answer so multi/preview/notes survive the round-trip.
@@ -218,6 +254,17 @@ export interface WireImage {
 }
 
 export type Usage = { input_tokens: number; output_tokens: number };
+
+/**
+ * Plan/58 (primitive A) — a slash command exposed by the Pi, mirrored from the
+ * SDK's `SlashCommandInfo`. `source` distinguishes built-in prompt templates
+ * from extension- and skill-provided commands so the app can label them.
+ */
+export interface WireCommand {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+}
 
 export type KnownErrorCode =
   | "tool_approval_required"
@@ -262,7 +309,18 @@ export type SessionHistoryEvent =
   // Reasoning/thinking text, replayed in history so a re-sync rebuilds the
   // collapsible "thinking" entry (live chunks alone would lose it on
   // reconnect). `in_reply_to` correlates it to the turn like `agent_message`.
-  | { ts: number; type: "thinking"; in_reply_to: string; text: string };
+  | { ts: number; type: "thinking"; in_reply_to: string; text: string }
+  // Plan/58 — a custom message emitted by another pi extension via
+  // `pi.sendMessage` (role:"custom"). Replayed in history so plugin output
+  // (todo overlays, subagent progress, …) survives a reconnect.
+  | {
+      ts: number;
+      type: "custom";
+      custom_type: string;
+      content: unknown;
+      display: boolean;
+      details?: unknown;
+    };
 
 export type ServerMessage =
   | {
@@ -314,6 +372,18 @@ export type ServerMessage =
   | { type: "agent_thinking_chunk"; in_reply_to: string; delta: string }
   | { type: "agent_done"; in_reply_to: string; usage?: Usage }
   | { type: "agent_message"; in_reply_to: string; text: string; usage?: Usage }
+  // Plan/58 — a custom message produced by another pi extension via
+  // `pi.sendMessage` (role:"custom"). Forwarded so remote clients can render
+  // plugin output that would otherwise stay in the desktop TUI. `content` is a
+  // string or an array of content blocks; `details` is the plugin's typed
+  // payload; `display:false` means the message targets the model, not the UI.
+  | {
+      type: "custom_message";
+      custom_type: string;
+      content: unknown;
+      display: boolean;
+      details?: unknown;
+    }
   // Plan/32: pushed after a context compaction (live, and replayed on history
   // re-sync). `tokens_before` is the pre-compaction token count.
   | { type: "compaction"; summary: string; tokens_before: number; ts?: number }
@@ -341,6 +411,10 @@ export type ServerMessage =
   | { type: "action_ok"; in_reply_to: string; action: ActionName }
   | { type: "action_error"; in_reply_to: string; action: ActionName; error: string }
   | { type: "models_list"; in_reply_to: string; models: WireModel[]; current?: WireModel }
+  // Plan/58 (primitive A) — response to `list_commands`. `source` mirrors the
+  // SDK's SlashCommandInfo.source so the app can label prompt vs extension vs
+  // skill commands.
+  | { type: "commands_list"; in_reply_to: string; commands: WireCommand[] }
   // Plan/57 — interactive extension prompt (ask_user via pi-ask). Mirrors
   // RpcExtensionUIRequest (select/confirm/input/editor/notify); the optional
   // `ask` envelope carries pi-ask's full question so the app renders richly.

@@ -35,6 +35,13 @@ export interface WireImage {
   mime: string;
 }
 
+/** One slash command Pi can execute, from the SDK's `getCommands()`. */
+export interface WireCommand {
+  name: string;
+  description?: string;
+  source: "extension" | "prompt" | "skill";
+}
+
 /** One question's answered parts. Keys mirror pi-ask's own schema verbatim. */
 export interface AskAnswerWire {
   /** Option *values* (not labels) for single/multi questions. */
@@ -95,6 +102,7 @@ export type ClientMessage =
   | { type: "model_set"; id: string; provider: string; model_id: string }
   | { type: "thinking_set"; id: string; level: ThinkingLevel }
   | { type: "list_models"; id: string }
+  | { type: "list_commands"; id: string }
   | ExtensionUiResponseWire;
 
 // ── Pi → Client (inner) ────────────────────────────────────────────────────
@@ -127,8 +135,23 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 /** Typed app actions that get an `action_ok`/`action_error` reply. */
 export type ActionName = "session_new" | "session_compact" | "model_set" | "thinking_set";
 
-/** SDK prompt methods mirrored by `extension_ui_request` (plan/57). */
-export type ExtensionUiMethod = "select" | "confirm" | "input" | "editor" | "notify";
+/**
+ * SDK UI methods mirrored by `extension_ui_request` (plan/57).
+ *
+ * The first five are interactive prompts that expect an `extension_ui_response`;
+ * the last four are one-way display-only controls (plan/65) that mutate
+ * ephemeral session UI state and are never answered.
+ */
+export type ExtensionUiMethod =
+  | "select"
+  | "confirm"
+  | "input"
+  | "editor"
+  | "notify"
+  | "setStatus"
+  | "setWidget"
+  | "setTitle"
+  | "set_editor_text";
 
 /** One option of an interactive prompt (pi-ask enrichment or SDK `select`). */
 export interface AskOptionWire {
@@ -194,6 +217,44 @@ export interface AskEnrichmentWire {
       message: string;
       notify_type?: string;
       ask?: AskEnrichmentWire;
+    }
+  /**
+   * One-way control (plan/65): set/clear a status line entry. A missing or
+   * empty `status_text` removes `status_key`. No response is expected.
+   */
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setStatus";
+      status_key: string;
+      status_text?: string;
+    }
+  /**
+   * One-way control (plan/65): set/clear a widget block. A missing or empty
+   * `widget_lines` removes `widget_key`; `widget_placement` defaults to
+   * `"aboveEditor"`. No response is expected.
+   */
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setWidget";
+      widget_key: string;
+      widget_lines?: string[];
+      widget_placement?: "aboveEditor" | "belowEditor";
+    }
+  /** One-way control (plan/65): set the session window title. */
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "setTitle";
+      title: string;
+    }
+  /** One-way control (plan/65): replace the composer draft. */
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "set_editor_text";
+      text: string;
     };
 
 export interface WireModel {
@@ -225,6 +286,7 @@ export type SessionHistoryEvent =
   | ({ ts: number } & Extract<ServerMessage, { type: "user_message" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "agent_message" }>)
   | { ts: number; type: "thinking"; in_reply_to: string; text: string }
+  | { ts: number; type: "custom"; custom_type: string; content: unknown; display: boolean; details?: unknown }
   | ({ ts: number } & Extract<ServerMessage, { type: "tool_request" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "tool_result" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "compaction" }>);
@@ -262,6 +324,12 @@ export type ServerMessage =
   | { type: "agent_thinking_chunk"; in_reply_to: string; delta: string }
   | { type: "agent_done"; in_reply_to: string; usage?: Usage }
   | { type: "agent_message"; in_reply_to: string; text: string; usage?: Usage }
+  /**
+   * Plugin-authored custom message (`pi.sendMessage` / `role:"custom"`). The
+   * text lives in `content` (string or content blocks) and the plugin tags it
+   * with `custom_type`; `display:false` means it targets the model, not the UI.
+   */
+  | { type: "custom_message"; custom_type: string; content: unknown; display: boolean; details?: unknown }
   | { type: "compaction"; summary: string; tokens_before: number; ts?: number }
   | { type: "tool_request"; tool_call_id: string; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; tool_call_id: string; result?: unknown; error?: string }
@@ -278,6 +346,7 @@ export type ServerMessage =
       truncated: boolean;
     }
   | { type: "models_list"; in_reply_to: string; models: WireModel[]; current?: WireModel }
+  | { type: "commands_list"; in_reply_to: string; commands: WireCommand[] }
   | { type: "action_ok"; in_reply_to: string; action: ActionName }
   | { type: "action_error"; in_reply_to: string; action: ActionName; error: string }
   | ExtensionUiRequestWire;

@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createConnection } from "node:net";
+import { createConnection, type Socket } from "node:net";
 import { join } from "node:path";
-import { Supervisor, decideFireAction, getSupervisorSockPath } from "./supervisor.js";
+import { Supervisor, decideFireAction, getSupervisorSockPath, getSupervisorUiSockPath } from "./supervisor.js";
+import { RpcChild } from "./rpc_child.js";
 import { addDaemon } from "./registry.js";
 import { readCronLog } from "./cron_log.js";
 import {
@@ -293,5 +294,112 @@ describe("Supervisor — cron ops", () => {
   test("cron_run on an unknown job → ok:false", async () => {
     const r = await ask({ op: "cron_run", job_id: "j_unknown" });
     expect(r).toMatchObject({ ok: false });
+  });
+});
+
+describe("Supervisor — extension UI socket (primitive B)", () => {
+  /** Open a persistent connection to the UI socket. */
+  function uiConnect(): Promise<Socket> {
+    return new Promise((resolve, reject) => {
+      const sock = createConnection({ path: getSupervisorUiSockPath() });
+      sock.setEncoding("utf8");
+      sock.once("connect", () => resolve(sock));
+      sock.once("error", reject);
+    });
+  }
+
+  /** Read the next newline-terminated line from the UI socket. */
+  function readLine(sock: Socket): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let buf = "";
+      const onData = (c: string) => {
+        buf += c;
+        const nl = buf.indexOf("\n");
+        if (nl >= 0) {
+          sock.off("data", onData);
+          resolve(buf.slice(0, nl));
+        }
+      };
+      sock.on("data", onData);
+      sock.once("error", reject);
+    });
+  }
+
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function registerAndStart(): Promise<string> {
+    const tmp = mkdtempSync(join(tmpdir(), "pi-sv-ui-"));
+    const reg = await ask({ op: "register", cwd: tmp }) as ControlReply<{ id: string }>;
+    const id = reg.ok ? reg.data!.id : "";
+    await ask({ op: "start", id });
+    return id;
+  }
+
+  test("routes a ui_response to the daemon child and pushes ui_request back", async () => {
+    const id = await registerAndStart();
+    // Spy on the prototype so the real write to the child's stdin is not needed
+    // (the stub child exits immediately under the test harness).
+    const spy = vi.spyOn(RpcChild.prototype, "sendUiResponse").mockReturnValue(true);
+    try {
+      const sock = await uiConnect();
+      sock.write(JSON.stringify({ op: "ui_hello", daemon_id: id }) + "\n");
+      await delay(20);
+
+      // Direction 1: app answer → child.
+      sock.write(JSON.stringify({ op: "ui_response", id: "rpc-1", value: "yes" }) + "\n");
+      await delay(20);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith({ id: "rpc-1", value: "yes" });
+
+      // Direction 2: child ui_request → app (the spy captured the child instance).
+      const child = spy.mock.instances[0] as unknown as RpcChild;
+      const lineP = readLine(sock);
+      child.emit("ui_request", { type: "extension_ui_request", id: "ui-7", method: "select", title: "Pick" });
+      const line = await lineP;
+      expect(JSON.parse(line)).toEqual({
+        op: "ui_request",
+        frame: { type: "extension_ui_request", id: "ui-7", method: "select", title: "Pick" },
+      });
+
+      sock.destroy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("strips undefined response fields before routing to the child", async () => {
+    const id = await registerAndStart();
+    const spy = vi.spyOn(RpcChild.prototype, "sendUiResponse").mockReturnValue(true);
+    try {
+      const sock = await uiConnect();
+      sock.write(JSON.stringify({ op: "ui_hello", daemon_id: id }) + "\n");
+      await delay(20);
+      sock.write(JSON.stringify({ op: "ui_response", id: "rpc-2", cancelled: true }) + "\n");
+      await delay(20);
+      expect(spy).toHaveBeenCalledWith({ id: "rpc-2", cancelled: true });
+      sock.destroy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("ignores a ui_response that arrives before ui_hello", async () => {
+    const id = await registerAndStart();
+    const spy = vi.spyOn(RpcChild.prototype, "sendUiResponse").mockReturnValue(true);
+    try {
+      const sock = await uiConnect();
+      sock.write(JSON.stringify({ op: "ui_response", id: "orphan", value: "x" }) + "\n");
+      await delay(20);
+      expect(spy).not.toHaveBeenCalled();
+      // A later hello for the real id still works.
+      sock.write(JSON.stringify({ op: "ui_hello", daemon_id: id }) + "\n");
+      await delay(20);
+      sock.write(JSON.stringify({ op: "ui_response", id: "rpc-3", value: "ok" }) + "\n");
+      await delay(20);
+      expect(spy).toHaveBeenCalledWith({ id: "rpc-3", value: "ok" });
+      sock.destroy();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

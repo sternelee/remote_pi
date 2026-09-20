@@ -51,6 +51,7 @@ import { appendCronLog, readCronLog, type CronResult } from "./cron_log.js";
  */
 
 const SUPERVISOR_SOCK_NAME = "supervisor.sock";
+const SUPERVISOR_UI_SOCK_NAME = "supervisor-ui.sock";
 
 /** Backoff schedule for auto-restart after a crash. After exhausting, the
  *  child stays in `crashed` state until manual `restart_all` or fresh
@@ -61,6 +62,15 @@ function supervisorSockPath(): string {
   const root = process.env["REMOTE_PI_HOME"] || homedir();
   // POSIX → ~/.pi/remote/supervisor.sock; Windows → per-user named pipe (plan/40).
   return ipcAddress("supervisor", join(root, ".pi", "remote", SUPERVISOR_SOCK_NAME));
+}
+
+/** Persistent newline-JSON UDS the daemon extension children connect to so the
+ *  supervisor can forward their `ctx.ui.*` frames to the paired app and route
+ *  the app's answers back. Separate from the request/reply control socket
+ *  because these connections stay open for the child's whole life. */
+function uiSockPath(): string {
+  const root = process.env["REMOTE_PI_HOME"] || homedir();
+  return ipcAddress("supervisor-ui", join(root, ".pi", "remote", SUPERVISOR_UI_SOCK_NAME));
 }
 
 /** Thrown by `start()` when another live supervisor already holds the UDS.
@@ -126,6 +136,10 @@ interface ChildSlot {
 
 export class Supervisor {
   private server: Server | null = null;
+  /** Persistent UI socket: one long-lived connection per running daemon child,
+   *  keyed by daemon id. See `ui_bridge.ts` for the child side. */
+  private uiServer: Server | null = null;
+  private readonly uiClients = new Map<string, Socket>();
   private readonly children = new Map<string, ChildSlot>();
   /** Live croner schedules, keyed by cron job id (plan/39). */
   private readonly cronJobs = new Map<string, Cron>();
@@ -140,6 +154,7 @@ export class Supervisor {
     // field) so every daemon has a stable name to inject via env.
     migrateRegistryNames();
     await this._bindUds();
+    await this._bindUiUds();
     this._spawnAllFromRegistry();
     // Cron (plan/39): schedule all enabled jobs, then run any missed catchup.
     this._reconcileCron();
@@ -170,6 +185,16 @@ export class Supervisor {
     // Windows named pipes have no file (auto-removed on exit) → nothing to do.
     if (!usesNamedPipe()) {
       try { unlinkSync(supervisorSockPath()); } catch { /* ignored */ }
+    }
+    // Close the persistent UI socket + drop every attached extension client.
+    await new Promise<void>((resolve) => {
+      if (!this.uiServer) return resolve();
+      this.uiServer.close(() => resolve());
+    });
+    this.uiServer = null;
+    this.uiClients.clear();
+    if (!usesNamedPipe()) {
+      try { unlinkSync(uiSockPath()); } catch { /* ignored */ }
     }
   }
 
@@ -221,6 +246,85 @@ export class Supervisor {
         .catch((err) => socket.end(encodeReply<unknown>({ ok: false, error: String(err) })));
     });
     socket.on("error", () => { /* client hung up; nothing to do */ });
+  }
+
+  // ── Extension UI socket (plan/58 primitive B) ────────────────────────────
+
+  /**
+   * Bind the persistent UI socket. Unlike the control socket (one request →
+   * one reply → close), each extension child holds its connection open for its
+   * whole life so `ctx.ui.*` frames can stream in both directions.
+   */
+  private async _bindUiUds(): Promise<void> {
+    const path = uiSockPath();
+    const pipe = usesNamedPipe();
+    // A stale file from a crashed supervisor would make `listen` fail; the
+    // control-socket single-instance guard already ran, so it is safe to clear.
+    if (!pipe && existsSync(path)) {
+      try { unlinkSync(path); } catch { /* will throw on bind if still held */ }
+    }
+    const server = createServer((socket) => this._onUiConnection(socket));
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(path, () => resolve());
+    });
+    this.uiServer = server;
+  }
+
+  private _onUiConnection(socket: Socket): void {
+    let buf = "";
+    // The daemon id this socket announced via `ui_hello`; set once, then used
+    // to route every `ui_response` line back to the right child.
+    let daemonId: string | null = null;
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk: string) => {
+      buf += chunk;
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (!line.trim()) continue;
+        let obj: unknown;
+        try { obj = JSON.parse(line); } catch { continue; }
+        if (!obj || typeof obj !== "object") continue;
+        const o = obj as Record<string, unknown>;
+        if (o["op"] === "ui_hello") {
+          const id = o["daemon_id"];
+          if (typeof id !== "string") continue;
+          daemonId = id;
+          this.uiClients.set(id, socket);
+        } else if (o["op"] === "ui_response") {
+          if (!daemonId) continue;
+          const rpcId = o["id"];
+          if (typeof rpcId !== "string") continue;
+          const response: { id: string; value?: string; confirmed?: boolean; cancelled?: boolean } = { id: rpcId };
+          if (typeof o["value"] === "string") response.value = o["value"];
+          if (typeof o["confirmed"] === "boolean") response.confirmed = o["confirmed"];
+          if (o["cancelled"] === true) response.cancelled = true;
+          this.children.get(daemonId)?.child.sendUiResponse(response);
+        }
+        // Unknown op → ignore (forward-compat).
+      }
+    });
+    socket.on("close", () => {
+      // Only drop the mapping if it still points at THIS socket (a reconnect
+      // for the same daemon replaces the map entry before the old close fires).
+      if (daemonId && this.uiClients.get(daemonId) === socket) {
+        this.uiClients.delete(daemonId);
+      }
+    });
+    socket.on("error", () => { /* client hung up; nothing to do */ });
+  }
+
+  /** Forward one `extension_ui_request` frame from a daemon child to its
+   *  connected app bridge. No-op when no bridge is attached — the RPC call
+   *  then hits its own timeout, matching pre-primitive-B behavior. */
+  private _pushUiFrame(daemonId: string, frame: unknown): void {
+    const sock = this.uiClients.get(daemonId);
+    if (!sock) return;
+    try {
+      sock.write(JSON.stringify({ op: "ui_request", frame }) + "\n");
+    } catch { /* client gone; drop the frame */ }
   }
 
   // ── Request dispatch ─────────────────────────────────────────────────────
@@ -586,6 +690,7 @@ export class Supervisor {
     this.children.set(id, slot);
 
     child.on("exit", (evt: RpcChildExitEvent) => this._onChildExit(id, evt));
+    child.on("ui_request", (frame: unknown) => this._pushUiFrame(id, frame));
     child.spawn();
   }
 
@@ -635,3 +740,6 @@ export function _idForCwdForTest(cwd: string): string { return daemonIdForCwd(cw
 /** Exported for the bin/supervisord entry + tests to know where the
  *  supervisor will bind. */
 export function getSupervisorSockPath(): string { return supervisorSockPath(); }
+
+/** Exported for `daemon/ui_bridge.ts` (the child side) + tests. */
+export function getSupervisorUiSockPath(): string { return uiSockPath(); }

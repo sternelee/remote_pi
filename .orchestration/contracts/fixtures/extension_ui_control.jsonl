@@ -1,0 +1,2 @@
+{"type":"extension_ui_request","id":"ui-1","method":"setStatus","status_key":"goal","status_text":"running"}
+{"type":"extension_ui_request","id":"ui-2","method":"setWidget","widget_key":"todo","widget_lines":["- [ ] wire","- [x] pair"],"widget_placement":"aboveEditor"}

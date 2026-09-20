@@ -1,0 +1,2 @@
+{"type":"custom_message","custom_type":"pi-subagents:status","content":"Delegating to worker agent…","display":true}
+{"type":"custom_message","custom_type":"@juicesharp/rpiv-todo","content":"- [ ] wire the relay\n- [x] pair the device","display":true,"details":{"source":"tool"}}

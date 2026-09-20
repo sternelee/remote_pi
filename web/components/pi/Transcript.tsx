@@ -55,6 +55,8 @@ function entryKey(entry: TimelineEntry): string {
       return `a-${entry.id}`;
     case "thinking":
       return `h-${entry.id}`;
+    case "custom":
+      return `p-${entry.id}`;
     case "tool":
       return `t-${entry.id}`;
     case "diff":
@@ -151,6 +153,38 @@ function Entry({
           </div>
         </details>
       );
+
+    case "custom": {
+      // `display: false` targets the model, not the UI — keep it out of the
+      // transcript entirely (the reducer still keeps the entry for replay).
+      if (!entry.display) return null;
+      return (
+        <div className="flex min-w-0 flex-col gap-1 font-mono text-[12px]">
+          <span style={{ color: "var(--pi-muted)" }}>{entry.customType || "plugin"}</span>
+          {entry.text ? (
+            <div
+              className="whitespace-pre-wrap break-words border-l-2 pl-3"
+              style={{ borderColor: "var(--pi-border)", color: "var(--pi-fg)" }}
+            >
+              {entry.text}
+            </div>
+          ) : null}
+          {entry.details !== undefined ? (
+            <details className="text-[11px]">
+              <summary className="cursor-pointer select-none" style={{ color: "var(--pi-dim)" }}>
+                details
+              </summary>
+              <pre
+                className="mt-1 overflow-x-auto whitespace-pre-wrap break-words"
+                style={{ color: "var(--pi-dim)" }}
+              >
+                {JSON.stringify(entry.details, null, 2)}
+              </pre>
+            </details>
+          ) : null}
+        </div>
+      );
+    }
 
     case "tool":
       return (

@@ -114,6 +114,75 @@ describe("thinking", () => {
     ]);
     expect(byKind(state, "thinking")[0]).toMatchObject({ streaming: false });
   });
+
+  it("replays reasoning carried by session_history", () => {
+    const history = fixture<Extract<ServerMessage, { type: "session_history" }>>("session_history");
+    const withThinking: Extract<ServerMessage, { type: "session_history" }> = {
+      ...history,
+      events: [
+        ...history.events,
+        { ts: 1700, type: "thinking", in_reply_to: "u1", text: "weighing options" },
+      ],
+    };
+    const state = timelineFromHistory(withThinking);
+    expect(byKind(state, "thinking")[0]).toMatchObject({ text: "weighing options", streaming: false });
+    // A replayed reasoning chunk must not leave the transcript stuck "working".
+    expect(state.working).toBe(false);
+  });
+});
+
+describe("custom messages", () => {
+  it("appends a custom_message entry with stringified content", () => {
+    const state = fold([
+      {
+        type: "custom_message",
+        custom_type: "pi-subagents:status",
+        content: [
+          { type: "text", text: "Delegating" },
+          { type: "text", text: "to worker" },
+        ],
+        display: true,
+      },
+    ]);
+    const custom = byKind(state, "custom");
+    expect(custom).toHaveLength(1);
+    expect(custom[0]).toMatchObject({
+      kind: "custom",
+      customType: "pi-subagents:status",
+      text: "Delegating\nto worker",
+      display: true,
+    });
+  });
+
+  it("preserves the display flag and details payload", () => {
+    const state = fold([
+      {
+        type: "custom_message",
+        custom_type: "rpiv-todo",
+        content: "- [ ] wire the relay",
+        display: false,
+        details: { source: "tool" },
+      },
+    ]);
+    expect(byKind(state, "custom")[0]).toMatchObject({
+      display: false,
+      details: { source: "tool" },
+    });
+  });
+
+  it("replays custom history events", () => {
+    const state = timelineFromHistory({
+      type: "session_history",
+      in_reply_to: "sync-1",
+      session_started_at: 1,
+      eos: true,
+      truncated: false,
+      events: [
+        { ts: 1700, type: "custom", custom_type: "pi-btw", content: "side thread", display: true },
+      ],
+    });
+    expect(byKind(state, "custom")[0]).toMatchObject({ customType: "pi-btw", text: "side thread" });
+  });
 });
 
 describe("user messages", () => {

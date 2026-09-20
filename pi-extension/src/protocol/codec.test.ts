@@ -14,6 +14,7 @@ const SERVER_TYPE_FILES = new Set([
   "agent_stream.jsonl",
   "agent_thinking.jsonl",
   "agent_message.jsonl",
+  "custom_message.jsonl",
   "tool_request.jsonl",
   "tool_result.jsonl",
   "error.jsonl",
@@ -21,13 +22,15 @@ const SERVER_TYPE_FILES = new Set([
   "pong.jsonl",
   "bye.jsonl",
   "session_history.jsonl",
+  "commands_list.jsonl",
+  "extension_ui_control.jsonl",
 ]);
 
 describe("fixtures", () => {
   const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
 
-  test("32 fixture files present", () => {
-    expect(files).toHaveLength(32);
+  test("35 fixture files present", () => {
+    expect(files).toHaveLength(35);
   });
 
   for (const file of files) {
