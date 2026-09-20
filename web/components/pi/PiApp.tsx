@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useServiceWorker } from "@/lib/pwa";
 import { parseHash, routeToHash } from "@/lib/session/route";
 import { usePiSession } from "@/lib/session/usePiSession";
 import { useTheme } from "@/lib/theme";
@@ -24,6 +25,7 @@ type View = "home" | "session" | "pair";
 export function PiApp() {
   const session = usePiSession();
   useTheme(session.prefs.theme);
+
   const [view, setView] = useState<View>(() => {
     if (typeof window === "undefined") return "home";
     return parseHash(window.location.hash).view;
@@ -32,7 +34,7 @@ export function PiApp() {
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
-  useServiceWorker();
+  const sw = useServiceWorker();
 
   const live = session.phase === "live" || (session.phase === "connecting" && session.activePeer);
 
@@ -164,7 +166,45 @@ export function PiApp() {
           />
         </div>
       ) : null}
+
+      {sw.updateReady ? (
+        <UpdateBanner working={session.transcript.working} onReload={sw.reload} onDismiss={sw.dismiss} />
+      ) : null}
     </main>
+  );
+}
+
+/**
+ * "A newer build is live" notice.
+ *
+ * Not an automatic reload: a reload drops the transcript, so the user picks the
+ * moment — and while a turn is running the banner says so, because that is the
+ * one moment they should not.
+ */
+export function UpdateBanner({
+  working,
+  onReload,
+  onDismiss,
+}: {
+  working?: boolean;
+  onReload: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="fixed bottom-2 left-3 flex max-w-[calc(100%_-_1.5rem)] flex-wrap items-baseline gap-x-3 gap-y-1 border-l-2 pl-2 font-mono text-[11px]"
+      style={{ borderColor: "var(--pi-yellow)", color: "var(--pi-muted)" }}
+    >
+      <span style={{ color: "var(--pi-yellow)" }}>new version ready</span>
+      {working ? <span style={{ color: "var(--pi-yellow)" }}>· a turn is running</span> : null}
+      <button type="button" onClick={onReload} className="underline-offset-2 hover:underline" style={{ color: "var(--pi-fg)" }}>
+        reload
+      </button>
+      <button type="button" onClick={onDismiss} className="underline-offset-2 hover:underline" style={{ color: "var(--pi-dim)" }}>
+        later
+      </button>
+    </div>
   );
 }
 
@@ -176,25 +216,4 @@ function Centered({ text }: { text: string }) {
       </p>
     </div>
   );
-}
-
-/**
- * Register the PWA service worker.
- *
- * Production only: a cache-first SW in front of Vite's dev server breaks HMR
- * and serves stale modules, which is a well-known footgun.
- */
-function useServiceWorker() {
-  useEffect(() => {
-    if (!import.meta.env?.PROD) return;
-    if (!("serviceWorker" in navigator)) return;
-    const onLoad = () => {
-      void navigator.serviceWorker.register("/sw.js").catch(() => {
-        /* offline support is best-effort */
-      });
-    };
-    if (document.readyState === "complete") onLoad();
-    else window.addEventListener("load", onLoad, { once: true });
-    return () => window.removeEventListener("load", onLoad);
-  }, []);
 }

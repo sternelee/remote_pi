@@ -56,6 +56,11 @@ export interface Settings {
   voice_notice_ack?: boolean;
   /** Theme choice; `system` follows the OS and is the default. */
   theme?: ThemeMode;
+  /**
+   * Raise an OS notification when a turn finishes while the tab is hidden.
+   * Off until the user asks for it: a browser notification is intrusive.
+   */
+  notify_on_finish?: boolean;
 }
 
 /** The camelCase preferences the session layer exposes to the UI. */
@@ -63,6 +68,7 @@ export interface Preferences {
   hideToolCalls: boolean;
   voiceNoticeAck: boolean;
   theme: ThemeMode;
+  notifyOnFinish: boolean;
 }
 
 /** Defaults for a browser that has never saved settings. */
@@ -71,6 +77,7 @@ export function prefsFrom(settings?: Settings): Preferences {
     hideToolCalls: settings?.hide_tool_calls ?? false,
     voiceNoticeAck: settings?.voice_notice_ack ?? false,
     theme: settings?.theme ?? "system",
+    notifyOnFinish: settings?.notify_on_finish ?? false,
   };
 }
 
@@ -80,6 +87,7 @@ export function settingsPatchForPrefs(patch: Partial<Preferences>): Settings {
   if (patch.hideToolCalls !== undefined) out.hide_tool_calls = patch.hideToolCalls;
   if (patch.voiceNoticeAck !== undefined) out.voice_notice_ack = patch.voiceNoticeAck;
   if (patch.theme !== undefined) out.theme = patch.theme;
+  if (patch.notifyOnFinish !== undefined) out.notify_on_finish = patch.notifyOnFinish;
   return out;
 }
 

@@ -136,6 +136,16 @@ export interface TranscriptState {
   sessionStartedAt?: number;
   /** True while the Pi is producing a turn. */
   working: boolean;
+  /**
+   * How the most recent turn ended, and which turn.
+   *
+   * This carries the protocol's own completion signal (`agent_done`) instead of
+   * leaving the notification layer to infer one from entry shapes — a turn whose
+   * only output was reasoning or tool calls still reports a completion that way.
+   *
+   * A replayed mirror must NOT set it: history is a replay, not a fresh turn.
+   */
+  lastTurnEnd?: { id: string; reason: "done" | "cancelled" | "error" };
 }
 
 export const emptyTranscript: TranscriptState = { entries: [], working: false };
@@ -442,6 +452,7 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
       return {
         ...state,
         working: false,
+        lastTurnEnd: { id: message.in_reply_to, reason: "done" },
         entries: finishThinking(
           upsert(
             state.entries,
@@ -554,6 +565,12 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
       return {
         ...state,
         working: false,
+        // An error attributed to a turn ends that turn. Claiming it here is what
+        // keeps the `agent_done` the Pi sends afterwards from announcing the
+        // truncated partial answer as a finished turn.
+        ...(message.in_reply_to
+          ? { lastTurnEnd: { id: message.in_reply_to, reason: "error" as const } }
+          : {}),
         entries: [
           ...state.entries,
           {
@@ -585,6 +602,9 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
       return {
         ...state,
         working: false,
+        // Recorded so a user interrupt cannot later be mistaken for a completion
+        // (the notification layer only acts on `reason: "done"`).
+        lastTurnEnd: { id: message.target_id, reason: "cancelled" },
         entries: finishThinking(
           upsert(
             state.entries,
@@ -669,6 +689,10 @@ export function timelineFromHistory(
   return {
     ...state,
     working: false,
+    // A mirror is a replay, not a fresh turn. Clearing the completion signal here
+    // is what stops a replayed `agent_done` from raising a notification (and
+    // `isAppendOnly` independently rejects a replaced timeline).
+    lastTurnEnd: undefined,
     entries: state.entries.map((entry) =>
       entry.kind === "thinking" ? { ...entry, streaming: false } : entry,
     ),

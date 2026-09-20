@@ -46,6 +46,9 @@ export function SettingsPanel({
   onSetTheme,
   hideToolCalls,
   onToggleHideToolCalls,
+  notifyOnFinish,
+  onToggleNotify,
+  notificationPermission,
   voiceNoticeAck,
   onAckVoiceNotice,
   devicePubkey,
@@ -58,6 +61,9 @@ export function SettingsPanel({
   onSetTheme: (theme: ThemeMode) => void;
   hideToolCalls: boolean;
   onToggleHideToolCalls: () => void;
+  notifyOnFinish: boolean;
+  onToggleNotify: () => void;
+  notificationPermission: NotificationPermission | "unsupported";
   voiceNoticeAck: boolean;
   onAckVoiceNotice: () => void;
   devicePubkey?: string;
@@ -153,6 +159,31 @@ export function SettingsPanel({
           >
             hide tool calls: {hideToolCalls ? "on" : "off"}
           </button>
+
+          <div className="flex min-w-0 flex-col gap-1">
+            <span style={{ color: MUTED }}>Notifications</span>
+            <span className="text-[11px] break-words" style={{ color: DIM }}>
+              A browser notification when a turn finishes or the Pi asks something while this
+              tab is in the background. Only works while the page is open — there is no push
+              server behind it.
+            </span>
+            <button
+              type="button"
+              onClick={onToggleNotify}
+              aria-pressed={notifyOnFinish}
+              disabled={notificationPermission === "unsupported"}
+              className="w-fit text-left underline-offset-2 hover:underline disabled:no-underline disabled:opacity-60"
+              style={{ color: FG }}
+            >
+              notify on finish: {notifyOnFinish ? "on" : "off"}
+            </button>
+            {notificationPermission === "denied" ? (
+              <span className="text-[11px] break-words" style={{ color: RED }}>
+                Blocked by the browser. Allow notifications for this site in your browser
+                settings, then reload.
+              </span>
+            ) : null}
+          </div>
 
           <div className="flex min-w-0 flex-col gap-1">
             <span style={{ color: MUTED }}>Voice</span>

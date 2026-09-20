@@ -21,6 +21,7 @@ import {
 import { QuestionPrompt } from "../components/pi/QuestionPrompt";
 import { SessionInfo } from "../components/pi/SessionInfo";
 import { SessionMenu } from "../components/pi/SessionMenu";
+import { UpdateBanner } from "../components/pi/PiApp";
 import { SettingsPanel } from "../components/pi/SettingsPanel";
 import { Transcript } from "../components/pi/Transcript";
 import { SessionTitle, StatusList, WidgetList } from "../components/pi/UiChrome";
@@ -508,6 +509,9 @@ describe("settings panel", () => {
     onToggleHideToolCalls: noop,
     voiceNoticeAck: false,
     onAckVoiceNotice: noop,
+    notifyOnFinish: false,
+    onToggleNotify: noop,
+    notificationPermission: "default" as const,
   };
 
   it("shows the relay, preferences, disclosure and device key", () => {
@@ -541,6 +545,42 @@ describe("settings panel", () => {
     expect(html).toContain("hide tool calls: on");
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("noted");
+  });
+
+  it("offers notifications, off by default, with what they cannot do spelled out", () => {
+    const html = renderToStaticMarkup(<SettingsPanel {...base} />);
+    expect(html).toContain("notify on finish: off");
+    expect(html).toContain("while this tab is in the background");
+    expect(html).toContain("no push server behind it");
+    // The toggle must not be disabled merely because permission is undecided.
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it("shows notifications on once enabled", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel {...base} notifyOnFinish notificationPermission="granted" />,
+    );
+    expect(html).toContain("notify on finish: on");
+    expect(html).toContain('aria-pressed="true"');
+  });
+
+  it("explains how to recover when the browser blocked notifications", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel {...base} notificationPermission="denied" />,
+    );
+    expect(html).toContain("Blocked by the browser");
+    expect(html).toContain("browser settings, then reload");
+  });
+
+  it("disables the notifications toggle where the platform has no Notification API", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel {...base} notificationPermission="unsupported" />,
+    );
+    // `disabled` alone is a false pass: the button's own Tailwind classes
+    // (`disabled:no-underline disabled:opacity-60`) contain that substring even
+    // when the control is enabled. Assert the attribute itself.
+    expect(html).toContain('disabled=""');
+    expect(html).toContain("notify on finish: off");
   });
 });
 
@@ -648,12 +688,38 @@ describe("dialog sizing", () => {
         onToggleHideToolCalls={noop}
         voiceNoticeAck={false}
         onAckVoiceNotice={noop}
+        notifyOnFinish={false}
+        onToggleNotify={noop}
+        notificationPermission="default"
       />,
     );
     // `max-w-[calc(100%-2rem)]` is invalid CSS (calc needs spaces around the
     // operator) and used to let the dialog overflow the phone viewport.
     expect(html).toContain("w-[calc(100%_-_2rem)]");
     expect(html).not.toContain("max-w-[calc(100%-2rem)]");
+  });
+});
+
+describe("pwa update banner", () => {
+  it("offers reload and defer, without forcing either", () => {
+    const html = renderToStaticMarkup(
+      <UpdateBanner working={false} onReload={noop} onDismiss={noop} />,
+    );
+    expect(html).toContain("new version ready");
+    expect(html).toContain("reload");
+    expect(html).toContain("later");
+    expect(html).toContain('role="status"');
+    // A reload mid-turn would drop the transcript, so the banner must not
+    // present itself as an automatic/forced action.
+    expect(html).not.toContain("a turn is running");
+  });
+
+  it("warns when a turn is in flight", () => {
+    const html = renderToStaticMarkup(
+      <UpdateBanner working onReload={noop} onDismiss={noop} />,
+    );
+    expect(html).toContain("a turn is running");
+    expect(html).toContain("reload");
   });
 });
 

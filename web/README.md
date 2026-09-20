@@ -164,8 +164,9 @@ traffic (see the header comment in `lib/relay/client.ts`).
   transcript lands in the composer for review and is never auto-sent
 - **Settings panel** off the status rail: relay URL (validated, save reconnects),
   an appearance switcher (system / light / dark), a `hide tool calls` toggle that
-  drops tool/diff rows from the transcript, the voice disclosure, and the device
-  public key
+  drops tool/diff rows from the transcript, a `notify on finish` toggle (asking
+  for permission on enable, and explaining how to recover when the browser has
+  blocked it), the voice disclosure, and the device public key
 - **Light, dark and system themes** — every surface paints from `--pi-*` tokens
   declared once with CSS `light-dark()`, so `system` follows the OS with no JS
   watcher and an explicit choice just pins `data-theme` on `<html>`. The tokyo-night
@@ -185,6 +186,20 @@ traffic (see the header comment in `lib/relay/client.ts`).
   with a cached fallback for offline reloads, and caches the immutable
   `/_next/static/*` chunks cache-first. `public/_headers` keeps `sw.js` and
   `manifest.webmanifest` revalidating so updates land promptly
+- **Session notifications** — an OS notification when a turn finishes, the Pi
+  asks a question (`ask_user`) or the session errors. Scoped to the **session
+  page** on purpose: they exist to tell you *this* session needs you, so leaving
+  the page releases the badge and the unread title. They are raised only while the
+  tab is hidden, because a visible tab already shows the result. Unread activity
+  also prefixes the tab title (`(2) Remote Pi`) and the installed-app badge where
+  the platform exposes it. Toggle and permission live in Settings; no push server
+  is involved, so it works for a background tab, not a closed browser
+- **PWA update notice** — with `registerType: "autoUpdate"` a new worker activates
+  silently, which leaves the open page running the previous build's chunks. The
+  client watches `controllerchange` and offers a reload rather than forcing one:
+  reloading mid-turn would drop the transcript, so the banner says when a turn is
+  running and the user picks the moment. `registration.update()` is nudged
+  whenever the tab becomes visible, so an installed PWA notices a deploy
 - **Mobile-friendly chrome** — dialogs size to `calc(100% - 2rem)` with a
   viewport-height cap so they never overflow a phone, the actions palette
   anchors to the top edge so the on-screen keyboard cannot cover it, the status
@@ -213,11 +228,11 @@ traffic (see the header comment in `lib/relay/client.ts`).
 
 ## Verification
 
-`pnpm test` runs 197 offline tests (codec, transcript reducer and message
-lifecycle, home-screen filtering and presence, answer construction, markdown
-rendering, the voice controller against a mocked `SpeechRecognition`, static
-renders, and the relay client against a fake WebSocket that reproduces the
-browser's `send()`-while-CONNECTING semantics).
+`pnpm test` runs 216 offline tests (codec, transcript reducer and message
+lifecycle, notification decisions, home-screen filtering and presence, answer
+construction, markdown rendering, the voice controller against a mocked
+`SpeechRecognition`, static renders, and the relay client against a fake
+WebSocket that reproduces the browser's `send()`-while-CONNECTING semantics).
 
 `PI_LIVE=1 pnpm test` adds one integration test over the real relay that pairs,
 mirrors the session, subscribes to rooms, and then drives `list_models`,

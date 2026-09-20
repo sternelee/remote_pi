@@ -148,7 +148,33 @@ Aceite: teste de integração sobre o relay real (`PI_LIVE=1`) que pareia,
 espelha, assina rooms e dirige todas as ações, verificando no **registro do peer**
 o que chegou — 105 testes. ✅
 
-### 9. Primeira publicação — PENDENTE
+### 9. Notificações de sessão + aviso de atualização do PWA — FEITO
+
+Terceira passada, depois de sincronizar com os planos 64/65 (thinking e plugins)
+já integrados no `web/`.
+
+- **Notificações** (`lib/session/notify.ts` + `useNotifications`): avisa turno
+  concluído, `ask_user` e erro. **Escopo é a página de sessão** — o hook vive no
+  `SessionScreen`, então sair da página solta o badge e o título de não-lidos. Só
+  dispara com a aba oculta (aba visível já mostra o resultado). O título ganha
+  prefixo `(2) Remote Pi` e o app badge é atualizado onde existe.
+- **Aviso de atualização**: com `registerType: "autoUpdate"` o worker novo assume
+  em silêncio e a página segue no build anterior; o cliente observa
+  `controllerchange` e oferece recarregar em vez de forçar — recarregar no meio de
+  um turno derrubaria o transcript. `registration.update()` é chamado quando a aba
+  volta a ficar visível.
+
+Duas decisões que evitam bugs sutis:
+
+| Decisão | Por quê |
+|---|---|
+| O hook **não** escreve `document.title` | a página já compõe o título a partir do `setTitle` (plano 65); dois escritores se sobrescreveriam. O hook expõe `unread` e a página faz `titleWithUnread(unread, base)` |
+| Eventos derivados de **diff de transcrição** (`isAppendOnly`) | `session_history`/`session_new` substituem a timeline; sem essa guarda o espelho re-notificaria turnos já lidos |
+
+Aceite: 15 testes puros das decisões (incluindo os negativos: espelho não
+re-notifica, aba visível não dispara) + 4 testes de render do painel. ✅
+
+### 10. Primeira publicação — PENDENTE
 
 `pnpm deploy` exige credencial Cloudflare (`wrangler login` ou
 `CLOUDFLARE_API_TOKEN`) e um `name` em `wrangler.jsonc`. Deploy manual: `web/`
@@ -159,9 +185,10 @@ não entrou em `.github/workflows/`.
 | Verificação | Resultado |
 |---|---|
 | `pnpm typecheck` | limpo |
-| `pnpm test` (offline) | 104 testes, 7 arquivos |
-| `pnpm test` com `PI_LIVE=1` | 105 testes — relay real, peer falso in-process |
-| `pnpm test` com `PI_PAIR_LINK` | 106 testes — relay real, Pi real |
+| `pnpm test` (offline) | 216 testes, 14 arquivos |
+| `pnpm test` com `PI_LIVE=1` | relay real, peer falso in-process |
+| `pnpm test` com `PI_PAIR_LINK` | relay real, Pi real |
+| Service worker no Worker construído | registrado e controlando a página (`swController`) |
 | `pnpm build` | pré-renderiza `/`, chunks servidos com 200 |
 | Hydration no Worker construído | `__react*` presente no `<main>` |
 | Challenge-response no relay de produção | 32 B nonce → 64 B assinatura → aceito |
@@ -190,7 +217,9 @@ exatamente o que pegou o bug de `send()` antes do `onopen`.
 - [x] Superfície de interação: quick actions (compact/new/model/thinking), steering,
       fila de rascunho, anexos de imagem, prompts multi/preview/freeform
 - [x] Reconexão automática ao peer lembrado
-- [x] Testes: codec, reducer, respostas, render, cliente de relay, integração opt-in
+- [x] Notificações de sessão (turno/ask_user/erro) com título de não-lidos e badge
+- [x] Aviso de atualização do PWA com recarga escolhida pelo usuário
+- [x] Testes: codec, reducer, respostas, notificações, render, cliente de relay, integração opt-in
 - [ ] Primeira publicação em Cloudflare (`pnpm deploy`)
 - [ ] `web/` no CI (workflow próprio, como `cockpit-cli.yml`)
 

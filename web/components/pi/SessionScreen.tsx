@@ -11,6 +11,8 @@ import { SessionMenu } from "./SessionMenu";
 import { SettingsPanel } from "./SettingsPanel";
 import { Transcript } from "./Transcript";
 import { SessionTitle, StatusList, WidgetList } from "./UiChrome";
+import { titleWithUnread } from "@/lib/session/notify";
+import { useNotifications } from "@/lib/session/useNotifications";
 
 const FG = "var(--pi-fg)";
 const DIM = "var(--pi-dim)";
@@ -36,6 +38,22 @@ export function SessionScreen({
   session: PiSession;
   onHome?: () => void;
 }) {
+  // Notifications are scoped to this page on purpose: they exist to tell you
+  // that *this* session needs you — an `ask_user` prompt, or a turn finishing —
+  // while the tab is hidden. The badge is released when this view unmounts.
+  const notificationLabel =
+    session.projects.find(
+      (p) =>
+        p.epk === session.activePeer?.remote_epk && p.roomId === session.activePeer?.room_id,
+    )?.name ??
+    session.activePeer?.nickname ??
+    session.activePeer?.session_name ??
+    "pi";
+  const notifications = useNotifications({
+    transcript: session.transcript,
+    label: notificationLabel,
+    enabled: session.prefs.notifyOnFinish,
+  });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [showActions, setShowActions] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -51,12 +69,22 @@ export function SessionScreen({
     if (el) el.scrollTop = el.scrollHeight;
   }, [entries, working]);
 
-  // `setTitle` reflects the Pi's session title in the browser tab; clearing it
-  // restores the app's default. Guarded for SSR, where there is no document.
+  // The tab title has one owner: this effect. It carries the Pi's `setTitle`
+  // (display control) as the base and prefixes unread activity, so a background
+  // tab still announces that something happened. Guarded for SSR.
   useEffect(() => {
     if (typeof document === "undefined") return;
-    document.title = session.uiControl.title || "Remote Pi";
-  }, [session.uiControl.title]);
+    const base = session.uiControl.title || "Remote Pi";
+    const next = titleWithUnread(notifications.unread, base);
+    document.title = next;
+    // Leaving the session page releases the unread state, and the badge half of
+    // that already happens on unmount — without this the title would outlive the
+    // page and the two indicators would disagree. Guarded so it never clobbers a
+    // title some other effect wrote in the meantime.
+    return () => {
+      if (document.title === next) document.title = base;
+    };
+  }, [session.uiControl.title, notifications.unread]);
 
   const peerLabel = peer ? (peer.nickname ?? peer.session_name) : "no peer";
 
@@ -212,6 +240,15 @@ export function SessionScreen({
         }
         voiceNoticeAck={session.prefs.voiceNoticeAck}
         onAckVoiceNotice={() => session.setPrefs({ voiceNoticeAck: true })}
+        notifyOnFinish={session.prefs.notifyOnFinish}
+        notificationPermission={notifications.permission}
+        onToggleNotify={() => {
+          const next = !session.prefs.notifyOnFinish;
+          session.setPrefs({ notifyOnFinish: next });
+          // Ask for permission as part of turning it on: a toggle that silently
+          // does nothing is worse than a prompt.
+          if (next && notifications.permission === "default") void notifications.request();
+        }}
         devicePubkey={session.identity ? publicKeyB64Of(session.identity) : undefined}
       />
 
