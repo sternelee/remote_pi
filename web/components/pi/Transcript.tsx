@@ -53,6 +53,8 @@ function entryKey(entry: TimelineEntry): string {
       return `u-${entry.id}`;
     case "agent":
       return `a-${entry.id}`;
+    case "thinking":
+      return `h-${entry.id}`;
     case "tool":
       return `t-${entry.id}`;
     case "diff":
@@ -133,6 +135,21 @@ function Entry({
             </span>
           ) : null}
         </div>
+      );
+
+    case "thinking":
+      return (
+        <details className="font-mono text-[12px]">
+          <summary className="cursor-pointer select-none" style={{ color: "var(--pi-think-dim)" }}>
+            {entry.streaming ? "thinking…" : "thinking"}
+          </summary>
+          <div
+            className="mt-1 border-l-2 whitespace-pre-wrap break-words pl-3"
+            style={{ borderColor: "var(--pi-border)", color: "var(--pi-think-muted)" }}
+          >
+            {entry.text}
+          </div>
+        </details>
       );
 
     case "tool":

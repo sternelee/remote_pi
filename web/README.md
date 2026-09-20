@@ -129,6 +129,10 @@ traffic (see the header comment in `lib/relay/client.ts`).
   never flashes raw syntax. Shiki highlights code (tokyo-night in dark,
   github-light in light) and each block gets a copy control; model-authored links stay behind Streamdown's
   confirmation modal and raw HTML is neutralised rather than injected
+- **Reasoning** — models that think stream `agent_thinking_chunk` deltas into a
+  collapsed `<details>` block above the answer (labelled `thinking…` while
+  live), kept in a separate timeline entry from the reply so the two never
+  interleave; `agent_done` and `cancelled` close the stream
 - **Image attachments** — one per message, downscaled and re-encoded on-device
   (JPEG, longest side ≤1568px, q0.8) before they go on the wire; the attach
   control greys out when the active model has no `vision`
@@ -196,7 +200,7 @@ traffic (see the header comment in `lib/relay/client.ts`).
 
 ## Verification
 
-`pnpm test` runs 171 offline tests (codec, transcript reducer and message
+`pnpm test` runs 176 offline tests (codec, transcript reducer and message
 lifecycle, home-screen filtering and presence, answer construction, markdown
 rendering, the voice controller against a mocked `SpeechRecognition`, static
 renders, and the relay client against a fake WebSocket that reproduces the

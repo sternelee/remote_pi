@@ -224,6 +224,7 @@ export type SessionHistoryEvent =
   | ({ ts: number } & Extract<ServerMessage, { type: "user_input" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "user_message" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "agent_message" }>)
+  | { ts: number; type: "thinking"; in_reply_to: string; text: string }
   | ({ ts: number } & Extract<ServerMessage, { type: "tool_request" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "tool_result" }>)
   | ({ ts: number } & Extract<ServerMessage, { type: "compaction" }>);
@@ -253,6 +254,12 @@ export type ServerMessage =
   /** Snapshot of the Pi-side draft queue (also sent in response to session_sync). */
   | { type: "queued_message_state"; id?: string; text?: string; items?: QueuedMessageItem[] }
   | { type: "agent_chunk"; in_reply_to: string; delta: string }
+  /**
+   * Reasoning delta. Kept separate from `agent_chunk` because the reducer
+   * aggregates chunks by `in_reply_to`; folding reasoning into the answer
+   * stream would corrupt the assistant bubble.
+   */
+  | { type: "agent_thinking_chunk"; in_reply_to: string; delta: string }
   | { type: "agent_done"; in_reply_to: string; usage?: Usage }
   | { type: "agent_message"; in_reply_to: string; text: string; usage?: Usage }
   | { type: "compaction"; summary: string; tokens_before: number; ts?: number }

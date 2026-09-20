@@ -265,6 +265,15 @@ Vocabulário curado de ações tipadas que o app mobile invoca sobre a sessão d
 
 `"xhigh"` só é honrado em famílias de modelo específicas (Anthropic 4.x reasoning, OpenAI o-series). Pi cai pra um nível vizinho quando não suporta — sem erro.
 
+### Reasoning streaming
+
+O texto de raciocínio do modelo (thinking) trafega num canal próprio, separado da resposta:
+
+- **Live**: `agent_thinking_chunk { in_reply_to, delta }` — usa o mesmo `in_reply_to` do turno, mas **nunca** é misturado com `agent_chunk`, porque os clientes agregam chunks por `in_reply_to` e misturar corromperia o balão de resposta.
+- **History**: evento `thinking { ts, in_reply_to, text }` dentro do `session_history` (bloco `thinking` consolidado da `AssistantMessage`).
+
+`agent_done` (e o `cancelled` do turno) encerram o stream de raciocínio junto com o da resposta. Modelos sem reasoning simplesmente não emitem o canal.
+
 ### Side-effects
 
 Os replies (`action_ok` / `models_list`) só confirmam dispatch. Efeitos visíveis chegam pelos canais normais:

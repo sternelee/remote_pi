@@ -146,6 +146,22 @@ describe("transcript rendering", () => {
     expect(html).not.toContain("onerror");
   });
 
+  it("renders reasoning as a collapsed thinking disclosure", () => {
+    const html = render([
+      { type: "agent_thinking_chunk", in_reply_to: "t", delta: "weighing the options" },
+      { type: "agent_done", in_reply_to: "t" },
+    ]);
+    expect(html).toContain("<details");
+    expect(html).toContain("thinking");
+    expect(html).toContain("weighing the options");
+    expect(html).not.toContain("thinking…");
+  });
+
+  it("marks reasoning as in progress while the turn streams", () => {
+    const html = render([{ type: "agent_thinking_chunk", in_reply_to: "t", delta: "hmm" }]);
+    expect(html).toContain("thinking…");
+  });
+
   it("timelineFromHistory produces a renderable state", () => {
     const history = fixture<Extract<ServerMessage, { type: "session_history" }>>("session_history");
     const html = renderToStaticMarkup(

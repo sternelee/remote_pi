@@ -77,6 +77,45 @@ describe("streaming a turn", () => {
   });
 });
 
+describe("thinking", () => {
+  it("accumulates agent_thinking_chunk deltas into one entry and closes on agent_done", () => {
+    const state = fold([
+      { type: "agent_thinking_chunk", in_reply_to: "turn-1", delta: "Let me " },
+      { type: "agent_thinking_chunk", in_reply_to: "turn-1", delta: "check." },
+      { type: "agent_done", in_reply_to: "turn-1" },
+    ]);
+    const thinking = byKind(state, "thinking");
+    expect(thinking).toHaveLength(1);
+    expect(thinking[0]).toMatchObject({
+      kind: "thinking",
+      id: "thinking-turn-1",
+      text: "Let me check.",
+      streaming: false,
+    });
+    expect(state.working).toBe(false);
+  });
+
+  it("keeps the reasoning separate from the answer for the same turn", () => {
+    const state = fold([
+      { type: "agent_thinking_chunk", in_reply_to: "turn-1", delta: "weighing options" },
+      { type: "agent_chunk", in_reply_to: "turn-1", delta: "answer" },
+      { type: "agent_done", in_reply_to: "turn-1" },
+    ]);
+    expect(byKind(state, "thinking")).toHaveLength(1);
+    expect(byKind(state, "thinking")[0]).toMatchObject({ text: "weighing options" });
+    expect(byKind(state, "agent")).toHaveLength(1);
+    expect(byKind(state, "agent")[0]).toMatchObject({ text: "answer" });
+  });
+
+  it("stops the reasoning stream when the turn is cancelled", () => {
+    const state = fold([
+      { type: "agent_thinking_chunk", in_reply_to: "turn-1", delta: "..." },
+      { type: "cancelled", in_reply_to: "turn-1", target_id: "turn-1" },
+    ]);
+    expect(byKind(state, "thinking")[0]).toMatchObject({ streaming: false });
+  });
+});
+
 describe("user messages", () => {
   it("renders user_input as a user entry", () => {
     const state = fold([fixture<ServerMessage>("user_input")]);

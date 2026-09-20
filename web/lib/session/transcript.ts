@@ -58,6 +58,13 @@ export type TimelineEntry =
       ts?: number;
     }
   | {
+      kind: "thinking";
+      id: string;
+      text: string;
+      streaming: boolean;
+      ts?: number;
+    }
+  | {
       kind: "tool";
       id: string;
       tool: string;
@@ -130,6 +137,16 @@ function upsert<T extends TimelineEntry>(
   if (index === -1) return [...entries, create()];
   const next = entries.slice();
   next[index] = patch(next[index] as T);
+  return next;
+}
+
+/** Settle the reasoning stream for a turn once it is done or cancelled. */
+function finishThinking(entries: TimelineEntry[], turnId: string): TimelineEntry[] {
+  const id = `thinking-${turnId}`;
+  const index = entries.findIndex((e) => e.kind === "thinking" && e.id === id);
+  if (index === -1) return entries;
+  const next = entries.slice();
+  next[index] = { ...(next[index] as Extract<TimelineEntry, { kind: "thinking" }>), streaming: false };
   return next;
 }
 
@@ -382,21 +399,41 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
         ),
       };
 
+    case "agent_thinking_chunk":
+      return {
+        ...state,
+        working: true,
+        entries: upsert(
+          state.entries,
+          (e) => e.kind === "thinking" && e.id === `thinking-${message.in_reply_to}`,
+          () => ({
+            kind: "thinking" as const,
+            id: `thinking-${message.in_reply_to}`,
+            text: message.delta,
+            streaming: true,
+          }),
+          (e) => ({ ...e, text: e.text + message.delta, streaming: true }),
+        ),
+      };
+
     case "agent_done":
       return {
         ...state,
         working: false,
-        entries: upsert(
-          state.entries,
-          (e) => e.kind === "agent" && e.id === message.in_reply_to,
-          () => ({
-            kind: "agent" as const,
-            id: message.in_reply_to,
-            text: "",
-            streaming: false,
-            usage: message.usage,
-          }),
-          (e) => ({ ...e, streaming: false, usage: message.usage }),
+        entries: finishThinking(
+          upsert(
+            state.entries,
+            (e) => e.kind === "agent" && e.id === message.in_reply_to,
+            () => ({
+              kind: "agent" as const,
+              id: message.in_reply_to,
+              text: "",
+              streaming: false,
+              usage: message.usage,
+            }),
+            (e) => ({ ...e, streaming: false, usage: message.usage }),
+          ),
+          message.in_reply_to,
         ),
       };
 
@@ -510,17 +547,20 @@ export function applyMessage(state: TranscriptState, message: ServerMessage): Tr
       return {
         ...state,
         working: false,
-        entries: upsert(
-          state.entries,
-          (e) => e.kind === "agent" && e.id === message.target_id,
-          () => ({
-            kind: "agent" as const,
-            id: message.target_id,
-            text: "",
-            streaming: false,
-            cancelled: true,
-          }),
-          (e) => ({ ...e, streaming: false, cancelled: true }),
+        entries: finishThinking(
+          upsert(
+            state.entries,
+            (e) => e.kind === "agent" && e.id === message.target_id,
+            () => ({
+              kind: "agent" as const,
+              id: message.target_id,
+              text: "",
+              streaming: false,
+              cancelled: true,
+            }),
+            (e) => ({ ...e, streaming: false, cancelled: true }),
+          ),
+          message.target_id,
         ),
       };
 

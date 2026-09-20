@@ -12,6 +12,7 @@ const SERVER_TYPE_FILES = new Set([
   "pair_error.jsonl",
   "user_input.jsonl",
   "agent_stream.jsonl",
+  "agent_thinking.jsonl",
   "agent_message.jsonl",
   "tool_request.jsonl",
   "tool_result.jsonl",
@@ -25,8 +26,8 @@ const SERVER_TYPE_FILES = new Set([
 describe("fixtures", () => {
   const files = readdirSync(fixtureDir).filter((f) => f.endsWith(".jsonl"));
 
-  test("31 fixture files present", () => {
-    expect(files).toHaveLength(31);
+  test("32 fixture files present", () => {
+    expect(files).toHaveLength(32);
   });
 
   for (const file of files) {

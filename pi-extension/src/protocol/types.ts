@@ -258,7 +258,11 @@ export type SessionHistoryEvent =
     }
   // Plan/32: a context-compaction marker, replayed in history (survives
   // re-sync like images) so the app re-renders the "context compacted" notice.
-  | { ts: number; type: "compaction"; summary: string; tokens_before: number };
+  | { ts: number; type: "compaction"; summary: string; tokens_before: number }
+  // Reasoning/thinking text, replayed in history so a re-sync rebuilds the
+  // collapsible "thinking" entry (live chunks alone would lose it on
+  // reconnect). `in_reply_to` correlates it to the turn like `agent_message`.
+  | { ts: number; type: "thinking"; in_reply_to: string; text: string };
 
 export type ServerMessage =
   | {
@@ -304,6 +308,10 @@ export type ServerMessage =
   | { type: "queued_message_state"; id?: string; text?: string; items?: QueuedMessageItem[] }
   | { type: "steer_consumed"; id: string }
   | { type: "agent_chunk"; in_reply_to: string; delta: string }
+  // Reasoning/thinking deltas. Kept as a distinct type rather than a channel
+  // flag on `agent_chunk`: clients aggregate chunks by `in_reply_to`, so
+  // mixing reasoning into the answer stream would corrupt the bubble.
+  | { type: "agent_thinking_chunk"; in_reply_to: string; delta: string }
   | { type: "agent_done"; in_reply_to: string; usage?: Usage }
   | { type: "agent_message"; in_reply_to: string; text: string; usage?: Usage }
   // Plan/32: pushed after a context compaction (live, and replayed on history
