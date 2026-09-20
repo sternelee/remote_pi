@@ -195,7 +195,18 @@ export function Composer({
           </button>
         ) : null}
         <span>{working ? "Enter to steer the running turn" : "Enter to send"}</span>
-        <span>Esc to interrupt</span>
+        {working ? (
+          <button
+            type="button"
+            onClick={onInterrupt}
+            disabled={disabled}
+            className="underline-offset-2 hover:underline disabled:opacity-50"
+            style={{ color: "var(--pi-yellow)" }}
+            title="Stop the running turn"
+          >
+            interrupt
+          </button>
+        ) : null}
         {working ? (
           <button
             type="button"

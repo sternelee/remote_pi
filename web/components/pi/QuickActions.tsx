@@ -128,6 +128,7 @@ export function QuickActions({
       title="Quick actions"
       description="Compact context, start a new session, and pick thinking or model."
       className="max-w-md"
+      position="top"
     >
       <CommandInput placeholder={placeholder} />
 

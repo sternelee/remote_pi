@@ -44,25 +44,44 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  position = "center",
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & { showCloseButton?: boolean }) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  showCloseButton?: boolean;
+  /**
+   * `center` (default) floats in the middle of the viewport. `top` anchors to
+   * the top edge — used by the command palette so an on-screen keyboard, which
+   * shrinks the visual viewport from the bottom, cannot cover it.
+   */
+  position?: "center" | "top";
+}) {
   // Rendered inline rather than through `DialogPortal` on purpose: this app has
   // no transformed ancestors that would trap a `fixed` layer, and rendering in
   // place keeps the dialog content in the server-rendered/static markup, which
   // this project's render tests rely on. `DialogPortal` stays exported for
   // callers that do want a portal.
   //
-  // Centering lives in `app/globals.css` (`transform: translate(-50%,-50%)`)
-  // rather than `translate-x/y-[-50%]` utilities: Tailwind v4 emits those as
-  // the standalone `translate` property, which would compose with the
-  // `transform` in the enter keyframes and make the dialog drift.
+  // Centering lives in `app/globals.css` (`transform: translate(-50%,-50%)`,
+  // keyed off `data-position`) rather than `translate-x/y-[-50%]` utilities:
+  // Tailwind v4 emits those as the standalone `translate` property, which would
+  // compose with the `transform` in the enter keyframes and make the dialog
+  // drift.
+  //
+  // Sizing: `w-[calc(100%_-_2rem)]` (viewport minus a 1rem gutter each side)
+  // instead of `w-full max-w-[calc(100%-2rem)]`. The latter is emitted verbatim
+  // as `calc(100%-2rem)`, which is invalid CSS (calc needs whitespace around
+  // `-`), so the cap was dropped and the dialog ran to the full viewport width
+  // on phones. `max-w-lg` still caps it on wide screens, and the height cap
+  // keeps tall dialogs inside the viewport.
   return (
     <>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-position={position}
         className={cn(
-          "bg-background fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
+          "bg-background fixed left-[50%] z-50 grid max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] max-w-lg gap-4 overflow-y-auto rounded-lg border p-4 shadow-lg duration-200 sm:p-6",
+          position === "top" ? "top-0" : "top-[50%]",
           className,
         )}
         {...props}

@@ -294,12 +294,27 @@ a {
   }
 }
 
+@keyframes pi-content-in-top {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 [data-slot="dialog-overlay"][data-state="open"] {
   animation: pi-overlay-in 0.12s ease-out;
 }
 
-[data-slot="dialog-content"][data-state="open"] {
+[data-slot="dialog-content"][data-position="center"][data-state="open"] {
   animation: pi-content-in 0.14s ease-out;
+}
+
+[data-slot="dialog-content"][data-position="top"][data-state="open"] {
+  animation: pi-content-in-top 0.14s ease-out;
 }
 
 [data-slot="dialog-overlay"] {
@@ -307,12 +322,19 @@ a {
 }
 
 /*
- * Centering and the enter animation both use `transform`, so the animation
- * overrides the resting rule while it plays and settles onto the identical
- * value. Mixing in `translate` utilities here would compose two offsets and
- * make the dialog visibly drift.
+ * Resting position and the enter animation both use `transform`, so the
+ * animation overrides the resting rule while it plays and settles onto the
+ * identical value. Mixing in `translate` utilities here would compose two
+ * offsets and make the dialog visibly drift.
  */
 [data-slot="dialog-content"] {
   font-family: var(--font-mono);
+}
+
+[data-slot="dialog-content"][data-position="center"] {
   transform: translate(-50%, -50%);
+}
+
+[data-slot="dialog-content"][data-position="top"] {
+  transform: translate(-50%, 0);
 }

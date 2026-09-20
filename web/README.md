@@ -168,6 +168,12 @@ traffic (see the header comment in `lib/relay/client.ts`).
   with a cached fallback for offline reloads, and caches the immutable
   `/_next/static/*` chunks cache-first. `public/_headers` keeps `sw.js` and
   `manifest.webmanifest` revalidating so updates land promptly
+- **Mobile-friendly chrome** — dialogs size to `calc(100% - 2rem)` with a
+  viewport-height cap so they never overflow a phone, the actions palette
+  anchors to the top edge so the on-screen keyboard cannot cover it, the status
+  rail folds settings/resync/reconnect into a single `menu` dropdown, and the
+  composer offers a clickable `interrupt` (not just the Esc hint) while a turn
+  runs
 
 ## What is not
 
@@ -190,7 +196,7 @@ traffic (see the header comment in `lib/relay/client.ts`).
 
 ## Verification
 
-`pnpm test` runs 165 offline tests (codec, transcript reducer and message
+`pnpm test` runs 171 offline tests (codec, transcript reducer and message
 lifecycle, home-screen filtering and presence, answer construction, markdown
 rendering, the voice controller against a mocked `SpeechRecognition`, static
 renders, and the relay client against a fake WebSocket that reproduces the

@@ -20,6 +20,7 @@ import {
 } from "../components/pi/QuickActions";
 import { QuestionPrompt } from "../components/pi/QuestionPrompt";
 import { SessionInfo } from "../components/pi/SessionInfo";
+import { SessionMenu } from "../components/pi/SessionMenu";
 import { SettingsPanel } from "../components/pi/SettingsPanel";
 import { Transcript } from "../components/pi/Transcript";
 import type { WireModel } from "../lib/protocol/types";
@@ -226,6 +227,13 @@ describe("quick actions panel", () => {
     expect(html).toContain("high");
     expect(html).toContain("Model");
     expect(html).toContain("Claude Opus 4.8");
+  });
+
+  it("anchors the palette to the top so the keyboard cannot cover it", () => {
+    const html = renderToStaticMarkup(<QuickActions {...base} models={[]} />);
+    expect(html).toContain('data-position="top"');
+    expect(html).toContain("top-0");
+    expect(html).not.toContain("top-[50%]");
   });
 
   it("renders the six thinking levels with the current one marked", () => {
@@ -557,5 +565,70 @@ describe("session info panel", () => {
   it("falls back to an em dash for missing fields", () => {
     const html = renderToStaticMarkup(<SessionInfo open onOpenChange={noop} info={{}} />);
     expect(html).toContain("—");
+  });
+});
+
+describe("session menu", () => {
+  const base = {
+    open: true,
+    onOpenChange: noop,
+    onSettings: noop,
+    onResync: noop,
+    onReconnect: noop,
+  };
+
+  it("collapses settings, resync and reconnect behind one menu", () => {
+    const html = renderToStaticMarkup(<SessionMenu {...base} />);
+    expect(html).toContain('role="menu"');
+    expect(html).toContain('aria-label="Session menu"');
+    expect(html).toContain(">settings<");
+    expect(html).toContain(">resync<");
+    expect(html).toContain(">reconnect<");
+  });
+
+  it("only exposes a labelled trigger while closed", () => {
+    const html = renderToStaticMarkup(<SessionMenu {...base} open={false} />);
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(">menu<");
+    expect(html).not.toContain('role="menu"');
+  });
+});
+
+describe("composer interrupt", () => {
+  const base = { directory: "/tmp", onSend: noop, onInterrupt: noop, onQueue: noop };
+
+  it("offers a clickable interrupt while a turn runs", () => {
+    const html = renderToStaticMarkup(<Composer {...base} working />);
+    expect(html).toContain(">interrupt<");
+    expect(html).toContain('title="Stop the running turn"');
+  });
+
+  it("hides the interrupt when idle", () => {
+    const html = renderToStaticMarkup(<Composer {...base} />);
+    expect(html).not.toContain(">interrupt<");
+  });
+});
+
+describe("dialog sizing", () => {
+  it("keeps the dialog inside the viewport on small screens", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel
+        open
+        onOpenChange={noop}
+        relayUrl="wss://relay.example/ws"
+        onSaveRelayUrl={noop}
+        theme="system"
+        onSetTheme={noop}
+        hideToolCalls={false}
+        onToggleHideToolCalls={noop}
+        voiceNoticeAck={false}
+        onAckVoiceNotice={noop}
+      />,
+    );
+    // `max-w-[calc(100%-2rem)]` is invalid CSS (calc needs spaces around the
+    // operator) and used to let the dialog overflow the phone viewport.
+    expect(html).toContain("w-[calc(100%_-_2rem)]");
+    expect(html).not.toContain("max-w-[calc(100%-2rem)]");
   });
 });

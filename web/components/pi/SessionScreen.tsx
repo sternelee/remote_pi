@@ -7,6 +7,7 @@ import type { Notice, PiSession } from "@/lib/session/usePiSession";
 import { Composer } from "./Composer";
 import { QuickActions } from "./QuickActions";
 import { SessionInfo } from "./SessionInfo";
+import { SessionMenu } from "./SessionMenu";
 import { SettingsPanel } from "./SettingsPanel";
 import { Transcript } from "./Transcript";
 
@@ -38,6 +39,7 @@ export function SessionScreen({
   const [showActions, setShowActions] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const peer = session.activePeer;
   const entries = session.transcript.entries.length;
   const working = session.transcript.working;
@@ -90,6 +92,7 @@ export function SessionScreen({
               setShowInfo((v) => !v);
               setShowActions(false);
               setShowSettings(false);
+              setShowMenu(false);
             }}
             className="underline-offset-2 hover:underline"
             style={{ color: showInfo ? "var(--pi-fg)" : MUTED }}
@@ -103,6 +106,7 @@ export function SessionScreen({
               setShowActions((v) => !v);
               setShowInfo(false);
               setShowSettings(false);
+              setShowMenu(false);
             }}
             className="underline-offset-2 hover:underline"
             style={{ color: showActions ? "var(--pi-fg)" : MUTED }}
@@ -110,36 +114,20 @@ export function SessionScreen({
           >
             actions
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowSettings((v) => !v);
-              setShowInfo(false);
-              setShowActions(false);
+          <SessionMenu
+            open={showMenu}
+            onOpenChange={(next) => {
+              setShowMenu(next);
+              if (next) {
+                setShowInfo(false);
+                setShowActions(false);
+                setShowSettings(false);
+              }
             }}
-            className="underline-offset-2 hover:underline"
-            style={{ color: showSettings ? "var(--pi-fg)" : MUTED }}
-            title="Relay URL, transcript preferences and device key"
-          >
-            settings
-          </button>
-          <button
-            type="button"
-            onClick={session.resync}
-            className="underline-offset-2 hover:underline"
-            style={{ color: MUTED }}
-            title="Re-fetch the last N events from the Pi (mirror, not a delta)"
-          >
-            resync
-          </button>
-          <button
-            type="button"
-            onClick={session.retry}
-            className="underline-offset-2 hover:underline"
-            style={{ color: MUTED }}
-          >
-            reconnect
-          </button>
+            onSettings={() => setShowSettings(true)}
+            onResync={session.resync}
+            onReconnect={session.retry}
+          />
           {working ? (
             <button
               type="button"
