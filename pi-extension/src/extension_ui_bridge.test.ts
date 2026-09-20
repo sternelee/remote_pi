@@ -489,3 +489,97 @@ describe("extension_ui_bridge", () => {
     });
   });
 });
+
+describe("extension_ui_bridge — generic UI prompts (plan/65)", () => {
+  /** The setStatus controls the bridge forwarded, in order. */
+  function statuses(sent: ServerMessage[]) {
+    return sent
+      .filter(
+        (m): m is Extract<ServerMessage, { method: "setStatus" }> =>
+          m.type === "extension_ui_request" && m.method === "setStatus",
+      )
+      .map((m) => ({ key: m.status_key, text: m.status_text }));
+  }
+
+  it("reports a waiting status when any extension opens a prompt", () => {
+    const bus = fakeBus();
+    const sent: ServerMessage[] = [];
+    createExtensionUiBridge(fakePi(bus), (m) => sent.push(m));
+
+    bus.emit("ui_prompt_start", {
+      type: "ui_prompt_start",
+      reason: "ui_prompt",
+      kind: "select",
+      title: "Pick a file",
+    });
+
+    expect(statuses(sent)).toEqual([{ key: "ui_prompt", text: "Waiting: Pick a file" }]);
+  });
+
+  it("falls back to the prompt kind when Pi omits the title", () => {
+    const bus = fakeBus();
+    const sent: ServerMessage[] = [];
+    createExtensionUiBridge(fakePi(bus), (m) => sent.push(m));
+
+    // Pi omits the `title` key entirely rather than sending an empty string.
+    bus.emit("ui_prompt_start", { type: "ui_prompt_start", reason: "ui_prompt", kind: "confirm" });
+
+    expect(statuses(sent)).toEqual([{ key: "ui_prompt", text: "Waiting for a confirmation" }]);
+  });
+
+  it("clears the status when the prompt closes", () => {
+    const bus = fakeBus();
+    const sent: ServerMessage[] = [];
+    createExtensionUiBridge(fakePi(bus), (m) => sent.push(m));
+
+    bus.emit("ui_prompt_start", { kind: "input", title: "Name?" });
+    bus.emit("ui_prompt_end", { kind: "input", title: "Name?" });
+
+    expect(statuses(sent)).toEqual([
+      { key: "ui_prompt", text: "Waiting: Name?" },
+      // An absent status_text is how the app is told to drop the key.
+      { key: "ui_prompt", text: undefined },
+    ]);
+  });
+
+  it("ignores a malformed start and an end with nothing open", () => {
+    const bus = fakeBus();
+    const sent: ServerMessage[] = [];
+    createExtensionUiBridge(fakePi(bus), (m) => sent.push(m));
+
+    bus.emit("ui_prompt_end", { kind: "select" }); // no start to close
+    bus.emit("ui_prompt_start", { kind: "nonsense" }); // unknown kind
+    bus.emit("ui_prompt_start", {}); // missing kind
+
+    expect(sent).toHaveLength(0);
+  });
+
+  it("replays the waiting status on sync while a prompt is open", () => {
+    const bus = fakeBus();
+    const sent: ServerMessage[] = [];
+    const bridge = createExtensionUiBridge(fakePi(bus), (m) => sent.push(m));
+
+    bus.emit("ui_prompt_start", { kind: "editor", title: "Commit message" });
+    expect(bridge?.pendingRequests()).toEqual([
+      expect.objectContaining({
+        method: "setStatus",
+        status_key: "ui_prompt",
+        status_text: "Waiting: Commit message",
+      }),
+    ]);
+
+    bus.emit("ui_prompt_end", { kind: "editor" });
+    expect(bridge?.pendingRequests()).toEqual([]);
+  });
+
+  it("stops forwarding once disposed", () => {
+    const bus = fakeBus();
+    const sent: ServerMessage[] = [];
+    const bridge = createExtensionUiBridge(fakePi(bus), (m) => sent.push(m));
+
+    bridge?.dispose();
+    bus.emit("ui_prompt_start", { kind: "select", title: "Late" });
+
+    expect(sent).toHaveLength(0);
+  });
+});

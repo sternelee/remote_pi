@@ -1,6 +1,6 @@
 # 65 — Pi plugin support (remote clients)
 
-**Status:** in progress. Primitives C and A are done; B is next; D is delivered by B.
+**Status:** primitives A, B and C are done; D is delivered by B.
 
 ## Context
 
@@ -16,7 +16,7 @@ Four generic primitives cover them:
 | Primitive | What it adds | Status |
 |---|---|---|
 | **A** — remote slash commands | enumerate via `pi.getCommands()`, execute `/cmd` through Pi's dispatcher | done |
-| **B** — `ctx.ui.*` forwarding | `select`/`confirm`/`input`/`editor`/`notify` + `setStatus`/`setWidget`/`setTitle`/`set_editor_text` reach the client | **this doc** |
+| **B** — `ctx.ui.*` forwarding | `select`/`confirm`/`input`/`editor`/`notify` + `setStatus`/`setWidget`/`setTitle`/`set_editor_text` reach the client | done |
 | **C** — custom messages | forward `role:"custom"` (`pi.sendMessage`) | done |
 | **D** — `pi-ask-user` | its `ask_user` tool is usable remotely | delivered by B |
 
@@ -33,6 +33,18 @@ message. TUI builtins (`/compact`, `/model`) stay on typed actions.
 
 `custom_message {custom_type, content, display, details?}` live, and the
 `custom` history event. `display:false` targets the model, not the UI.
+
+### B is implemented
+
+B landed with a slightly different layout than the sketch below, so read the
+sketch as design rather than as a file list:
+
+- the extension-side bridge is `src/daemon/ui_bridge.ts` (`SupervisorUiBridge`),
+  not `src/supervisor_ui_bridge.ts`, and its frame/response types (`UiFrame`,
+  `UiResponse`) live there instead of in a separate `daemon/ui_protocol.ts`;
+- the socket is `supervisor-ui.sock`;
+- the `plugin_ui.jsonl` fixture was **not** added — `.orchestration/contracts/`
+  is a protected area that changes only on explicit contract tasks.
 
 ## Why B also delivers D
 
@@ -147,6 +159,41 @@ Responses stay `value` / `confirmed` / `cancelled`.
 
 These four are **session state, not transcript entries** (they are not replayed
 by `session_history`), so they live in `usePiSession` state, not the reducer.
+
+## TUI-mode prompt visibility (not B)
+
+B only applies in daemon mode (`REMOTE_PI_DAEMON === "1"`). When Pi runs as a
+normal TUI, `ctx.ui.custom()` is real, `pi-ask-user` keeps its own overlay, and
+none of B's plumbing is in play — so `ask_user` is invisible to remote clients.
+
+The extension UI bridge now also subscribes to `ui_prompt_start` /
+`ui_prompt_end`, which Pi emits around *any* extension's blocking `ctx.ui.*`
+call, and surfaces the span as `setStatus {status_key: "ui_prompt"}` — set on
+start, cleared on end, and replayed by `pendingRequests` so a client that
+connects mid-prompt still learns the desktop is blocked. Pi's own
+`uiPromptDepth` counter coalesces nested prompts, so exactly one start/end pair
+arrives. The events carry only `kind` + an optional `title` and are
+explicitly notification-only: the app can show that the desktop is waiting, but
+the human must answer in the terminal. No web changes were needed —
+`reduceUiControl` and `StatusList` already render it.
+
+### Why the tool cannot simply be taken over
+
+Tempting shortcut: register our own `ask_user` to own both surfaces and answer
+remotely in TUI mode too. Verified against pi 0.85.1 with a probe extension — it
+does **not** work. Tool override by name is documented for *built-in* tools
+only; between two extensions it is a hard load error, and the loser is the
+existing extension:
+
+```
+Error: Failed to load extension ".../pi-ask-user/index.ts":
+  Tool "ask_user" conflicts with .../probe-ask.ts
+```
+
+So owning `ask_user` would silently disable `pi-ask-user` entirely — its tool,
+its skill and its events. There is no precedence setting or override flag, only
+`pi -ne`. Full interactive parity therefore comes from B, or from an upstream
+submit event in `pi-ask-user`.
 
 ## Out of scope
 

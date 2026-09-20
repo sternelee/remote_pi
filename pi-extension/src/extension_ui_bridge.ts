@@ -14,8 +14,26 @@
 // `pi --mode rpc`'s RpcExtensionUIRequest/Response) so the mobile app renders
 // ask_user natively. pi-ask's richer schema rides in an optional `ask` envelope.
 //
-// Inert when pi-ask is absent: no events fire, nothing breaks. ask_user without
-// pi-ask doesn't exist, so this bridge is strictly opt-in.
+// The pi-ask half is inert when pi-ask is absent: no events fire, nothing
+// breaks. NB: pi-ask is NOT the only ask_user provider — `pi-ask-user`
+// registers the same tool — so "ask_user without pi-ask doesn't exist" is
+// false. That path is merely not bridgeable: it emits no start event carrying
+// the question and accepts no inbound submit, so an answer cannot reach it.
+//
+// Plan/65 — this bridge ALSO reports any extension's blocking UI prompt, so the
+// app can show that the desktop is waiting on a human. This is the TUI-mode
+// complement to primitive B: B forwards real `ctx.ui.*` prompts (and their
+// answers) when Pi runs as an RPC child, which is what makes `ask_user`
+// answerable remotely; here Pi owns the terminal, so a prompt can be observed
+// but never answered.
+//
+// Pi emits `ui_prompt_start` / `ui_prompt_end` around every `ctx.ui.select` /
+// `confirm` / `input` / `editor` / `custom`, and its own `uiPromptDepth` counter
+// coalesces nested prompts — exactly one start/end pair per waiting span, so no
+// depth tracking is needed here. Those events carry only `kind` + an optional
+// `title` and are explicitly notification-only. The wait is surfaced as a
+// `setStatus` control, which the app renders as session chrome and never as
+// transcript content.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { PlainPeerChannel } from "./transport/peer_channel.js";
@@ -39,6 +57,35 @@ const PI_ASK_SUBMIT_RESULT = "@eko24ive/pi-ask:submit-result";
  *  disposed on session_shutdown — pi-ask does not emit `completed` for those).
  *  Bounds memory; generous vs. a human answer time. */
 const FLOW_TTL_MS = 10 * 60 * 1000;
+
+const UI_PROMPT_START = "ui_prompt_start";
+const UI_PROMPT_END = "ui_prompt_end";
+
+/** Status-line key for the "desktop is waiting on a prompt" indicator. A single
+ *  key is correct because Pi coalesces nested prompts into one outer span. */
+const UI_PROMPT_STATUS_KEY = "ui_prompt";
+/** Synthetic correlation id. Controls are never answered, so nothing routes on
+ *  it; it exists because every extension_ui_request carries one. */
+const UI_PROMPT_REQUEST_ID = "ui-prompt-status";
+
+/** Mirrors the SDK's `UIPromptKind`, re-declared locally so the wire layer owns
+ *  its own enum instead of leaking an SDK-internal type. */
+type UIPromptKind = "select" | "confirm" | "input" | "editor" | "custom";
+
+/** What the human is being asked for, used when a prompt has no title. */
+const UI_PROMPT_KIND_NOUN: Record<UIPromptKind, string> = {
+  select: "a choice",
+  confirm: "a confirmation",
+  input: "your input",
+  editor: "your edit",
+  custom: "a prompt",
+};
+
+/** The prompt Pi is currently blocked on, if any. */
+interface ActivePrompt {
+  kind: UIPromptKind;
+  title?: string;
+}
 
 /** Minimal view of `pi.events` this bridge needs. */
 type EventBus = ExtensionAPI["events"];
@@ -99,6 +146,9 @@ export function createExtensionUiBridge(
   // WITHOUT emitting `completed`, so without this the `activeFlows` map would
   // leak one entry per abandoned flow. Bounded, defensive.
   const flowTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Single slot, not a stack: Pi's `uiPromptDepth` guarantees one start/end
+  // pair per waiting span even when prompts nest.
+  let activePrompt: ActivePrompt | null = null;
 
   function clearFlowTtl(flowId: string): void {
     const t = flowTimers.get(flowId);
@@ -206,6 +256,22 @@ export function createExtensionUiBridge(
     });
   });
 
+  const unsubPromptStart = events.on(UI_PROMPT_START, (raw: unknown) => {
+    const prompt = parsePromptEvent(raw);
+    if (!prompt) return;
+    activePrompt = prompt;
+    broadcast(promptStatusMessage(prompt));
+  });
+
+  const unsubPromptEnd = events.on(UI_PROMPT_END, () => {
+    // Clear unconditionally rather than matching `kind`: the span is over, and
+    // a one-sided clear can only leave the indicator stuck on forever. The
+    // no-active-prompt guard just avoids a redundant broadcast.
+    if (!activePrompt) return;
+    activePrompt = null;
+    broadcast(promptStatusMessage(null));
+  });
+
   function respond(msg: ExtensionUiResponseWire): void {
     const ask = msg.ask;
 
@@ -287,15 +353,65 @@ export function createExtensionUiBridge(
     // Insertion order = the order the flows opened, so a client replaying more
     // than one renders them oldest-first. pi-ask resolves one flow at a time in
     // practice, so this is a defensive detail rather than a live case.
-    pendingRequests: () => [...activeFlows.values()].map(requestForFlow),
+    pendingRequests: () => {
+      // The waiting indicator is chrome rather than an interactive request, but
+      // a peer that connects mid-prompt should still learn the desktop is
+      // blocked — the same reasoning as replaying open flows. Ordered first so
+      // the client has the context before it renders any prompt.
+      const waiting = activePrompt ? [promptStatusMessage(activePrompt)] : [];
+      return [...waiting, ...[...activeFlows.values()].map(requestForFlow)];
+    },
     dispose() {
       unsubStarted();
       unsubCompleted();
       unsubResult();
+      unsubPromptStart();
+      unsubPromptEnd();
+      activePrompt = null;
       for (const t of flowTimers.values()) clearTimeout(t);
       flowTimers.clear();
       activeFlows.clear();
     },
+  };
+}
+
+/** Narrow a `ui_prompt_start` / `ui_prompt_end` payload (they share a shape).
+ *  Tolerates anything: `kind` is required, `title` is genuinely optional (Pi
+ *  omits the key entirely rather than sending an empty string). */
+function parsePromptEvent(raw: unknown): ActivePrompt | null {
+  const e = raw as { kind?: unknown; title?: unknown } | null;
+  const kind = asPromptKind(e?.kind);
+  if (!kind) return null;
+  const title = typeof e?.title === "string" && e.title.trim() ? e.title.trim() : undefined;
+  return title ? { kind, title } : { kind };
+}
+
+function asPromptKind(value: unknown): UIPromptKind | null {
+  return value === "select" ||
+    value === "confirm" ||
+    value === "input" ||
+    value === "editor" ||
+    value === "custom"
+    ? value
+    : null;
+}
+
+/** The setStatus control that sets the waiting indicator, or clears it when
+ *  `prompt` is null (an absent `status_text` is how the app is told to drop the
+ *  key — see `reduceUiControl`). */
+function promptStatusMessage(prompt: ActivePrompt | null): ServerMessage {
+  return {
+    type: "extension_ui_request",
+    id: UI_PROMPT_REQUEST_ID,
+    method: "setStatus",
+    status_key: UI_PROMPT_STATUS_KEY,
+    ...(prompt
+      ? {
+          status_text: prompt.title
+            ? `Waiting: ${prompt.title}`
+            : `Waiting for ${UI_PROMPT_KIND_NOUN[prompt.kind]}`,
+        }
+      : {}),
   };
 }
 
