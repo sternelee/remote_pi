@@ -101,6 +101,28 @@ describe("transcript rendering", () => {
     expect(html).toContain("answered · Yes");
   });
 
+  it("marks an elaborated prompt distinctly from an answered one", () => {
+    const state = applyMessage(emptyTranscript, {
+      type: "extension_ui_request",
+      id: "q2b",
+      method: "confirm",
+      title: "Deploy?",
+      message: "Touches prod.",
+    });
+    const html = renderToStaticMarkup(
+      <Transcript
+        state={{
+          ...state,
+          entries: state.entries.map((e) =>
+            e.kind === "question" ? { ...e, answered: "what breaks in prod?", mode: "elaborate" } : e,
+          ),
+        }}
+        onAnswer={noop}
+      />,
+    );
+    expect(html).toContain("asked to elaborate · what breaks in prod?");
+  });
+
   it("renders the running indicator only while a turn is in flight", () => {
     const idle = render([{ type: "agent_chunk", in_reply_to: "t", delta: "hi" }, { type: "agent_done", in_reply_to: "t" }]);
     expect(idle).not.toContain('aria-live="polite"');

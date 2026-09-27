@@ -178,6 +178,32 @@ describe("prompt rendering", () => {
   it("shows keyboard hints", () => {
     expect(renderPrompt(MULTI_PROMPT)).toContain("↑↓ choose");
   });
+
+  it("offers the elaborate exit on a pi-ask flow, disabled until a note exists", () => {
+    const html = renderPrompt(MULTI_PROMPT);
+    expect(html).toContain("elaborate");
+    // pi-ask builds elaboration.items from the notes, so an empty elaborate is
+    // refused client-side and the disabled button explains what is missing.
+    expect(html).toContain("add a note first");
+    // The active row offers an option-note editor.
+    expect(html).toContain("+ note");
+    // And the question-level note affordance is reachable.
+    expect(html).toContain('aria-label="note on Databases"');
+  });
+
+  it("keeps notes and the elaborate exit out of bare SDK prompts", () => {
+    const html = renderPrompt({
+      type: "extension_ui_request",
+      id: "req-bare",
+      method: "select",
+      title: "Which environment?",
+      options: ["staging", "prod"],
+    });
+    expect(html).not.toContain("elaborate");
+    expect(html).not.toContain("+ note");
+    // A degraded prompt still answers with a bare label.
+    expect(html).toContain("submit");
+  });
 });
 
 describe("steering in the transcript", () => {

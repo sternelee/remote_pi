@@ -32,6 +32,10 @@ panel opened from the status rail or the composer, keeping the single-screen UX.
 Explicitly out of scope (already declared in `web/README.md` § "What is not"):
 pi-ask `elaborate` mode, offline send queueing, end-to-end encryption.
 
+> 2026-09-27: the elaborate exit has since shipped (notes + `mode: "elaborate"`,
+> see `web/README.md` § "What is implemented"); the remote contract still carries
+> no `continuation`/`elaboration` context, so a refined re-ask arrives as a fresh flow.
+
 ## Cross-cutting
 
 ### Preferences

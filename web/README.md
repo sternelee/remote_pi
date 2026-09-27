@@ -120,6 +120,11 @@ traffic (see the header comment in `lib/relay/client.ts`).
 - Session mirror (`session_sync`) on every connect **and** reconnect
 - Transcript: user turns, streamed agent output, tool calls with results,
   unified diffs, compaction, errors, `bye`, and interactive prompts
+- **pi-ask prompt flow** — the full `ask` envelope: multi-select, previews,
+  free-text, and question/option notes, reviewed before sending with two exits —
+  `submit` finalizes, `elaborate` (disabled until a note exists) asks the agent
+  to clarify the notes first; the resolved transcript line distinguishes
+  "answered" from "asked to elaborate"
 - Composer with IME-safe Enter, interrupt via `cancel`, and **steering**: while a
   turn runs, Enter folds the text into it (`streaming_behavior: "steer"`) and
   the transcript shows `steering…` until the Pi answers `steer_consumed`
@@ -209,8 +214,10 @@ traffic (see the header comment in `lib/relay/client.ts`).
 
 ## What is not
 
-- **pi-ask `elaborate` mode** — answers are submitted with `mode: "submit"`;
-  the elaborate flow is not exposed.
+- **pi-ask refinement context** — sending `mode: "elaborate"` is supported, but
+  the remote-events contract does not expose `continuation`/`elaboration`, so a
+  refined re-ask arrives as a fresh flow with no memory of already-committed
+  answers.
 - **Offline sending** — a message sent while disconnected is refused with a
   notice rather than queued.
 - **End-to-end encryption** — none exists in the protocol; the relay sees
@@ -228,11 +235,12 @@ traffic (see the header comment in `lib/relay/client.ts`).
 
 ## Verification
 
-`pnpm test` runs 216 offline tests (codec, transcript reducer and message
+`pnpm test` runs 256 offline tests (codec, transcript reducer and message
 lifecycle, notification decisions, home-screen filtering and presence, answer
-construction, markdown rendering, the voice controller against a mocked
-`SpeechRecognition`, static renders, and the relay client against a fake
-WebSocket that reproduces the browser's `send()`-while-CONNECTING semantics).
+construction including pi-ask notes and the elaborate exit, markdown rendering,
+the voice controller against a mocked `SpeechRecognition`, static renders, and
+the relay client against a fake WebSocket that reproduces the browser's
+`send()`-while-CONNECTING semantics).
 
 `PI_LIVE=1 pnpm test` adds one integration test over the real relay that pairs,
 mirrors the session, subscribes to rooms, and then drives `list_models`,
@@ -272,7 +280,8 @@ it received.
   these slots hard-code another product's labels or embed a demo composer:
   the pair screen's welcome box, the paired-Pi picker, the quick-actions panel,
   the prompt renderer (`QuestionPrompt` — a real radiogroup/checkbox group with
-  previews and free text), and the `◆` error line.
+  previews, free text, pi-ask notes and the submit/elaborate exits), and the
+  `◆` error line.
 
   `lib/utils.ts` (`cn`) exists because the registry components import it; it now
   re-exports `cn` from the [`cn`](https://github.com/shadcn-ui/cn) package (the

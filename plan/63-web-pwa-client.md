@@ -236,3 +236,6 @@ recebida, envio offline e E2E (não existe no protocolo). Ver `web/README.md`
 - Workflow de CI espelhando `cockpit-cli.yml` (typecheck + test)
 - Voz no navegador (Web Speech API) para paridade com o app
 - Modo `elaborate` do pi-ask e edição de rascunho na fila
+
+> 2026-09-27: voz, rascunho e o modo `elaborate` do pi-ask já estão no cliente
+> (ver `web/README.md` § "What is implemented"); publicação e CI continuam pendentes.

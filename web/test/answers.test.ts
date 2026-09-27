@@ -8,7 +8,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildQuestionAnswer, cancelAnswer, summarizeSelection } from "../lib/session/answers";
+import {
+  answerToWire,
+  buildQuestionAnswer,
+  cancelAnswer,
+  summarizeSelection,
+} from "../lib/session/answers";
 import type { QuestionView } from "../lib/session/transcript";
 
 const multi: QuestionView = {
@@ -139,5 +144,153 @@ describe("summarizeSelection", () => {
         { selected: { env: ["raw-value"] }, custom: {} },
       ),
     ).toBe("raw-value");
+  });
+});
+
+describe("notes", () => {
+  it("carries a question note, trimmed", () => {
+    const answer = buildQuestionAnswer("req-9", "flow-9", [single], {
+      selected: { env: ["prod"] },
+      custom: {},
+      notes: { env: "  why not staging?  " },
+    });
+    expect(answer?.answers).toEqual({
+      env: { values: ["prod"], note: "why not staging?" },
+    });
+    expect(answer?.summary).toBe("Production, why not staging?");
+  });
+
+  it("carries option notes keyed by value and drops blank ones", () => {
+    const answer = buildQuestionAnswer("req-10", "flow-10", [multi], {
+      selected: { targets: ["api"] },
+      custom: {},
+      optionNotes: { targets: { web: "  is it SSR?  ", api: "   " } },
+    });
+    expect(answer?.answers).toEqual({
+      targets: { values: ["api"], optionNotes: { web: "is it SSR?" } },
+    });
+    expect(answer?.summary).toBe("API service, Web client: is it SSR?");
+  });
+
+  it("lets a note fill a required question", () => {
+    const answer = buildQuestionAnswer("req-11", "flow-11", [single], {
+      selected: {},
+      custom: {},
+      notes: { env: "which one is cheaper?" },
+    });
+    expect(answer?.answers).toEqual({ env: { note: "which one is cheaper?" } });
+    expect(answer?.summary).toBe("which one is cheaper?");
+  });
+
+  it("still refuses a required question with neither answer nor note", () => {
+    expect(
+      buildQuestionAnswer("req-12", "flow-12", [single], {
+        selected: {},
+        custom: {},
+        notes: { env: "   " },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("elaborate mode", () => {
+  it("defaults to submit", () => {
+    const answer = buildQuestionAnswer("req-13", "flow-13", [single], {
+      selected: { env: ["prod"] },
+      custom: {},
+    });
+    expect(answer?.mode).toBe("submit");
+  });
+
+  it("carries the mode plus the notes pi-ask turns into elaboration items", () => {
+    const answer = buildQuestionAnswer(
+      "req-14",
+      "flow-14",
+      [single],
+      { selected: { env: ["prod"] }, custom: {}, notes: { env: "what does prod cost?" } },
+      "elaborate",
+    );
+    expect(answer).toMatchObject({
+      mode: "elaborate",
+      answers: { env: { values: ["prod"], note: "what does prod cost?" } },
+    });
+  });
+
+  it("does not let a blank required question block an elaborate", () => {
+    const answer = buildQuestionAnswer(
+      "req-15",
+      "flow-15",
+      [single, multi],
+      { selected: {}, custom: {}, notes: { targets: "what are the trade-offs?" } },
+      "elaborate",
+    );
+    expect(answer).toMatchObject({
+      mode: "elaborate",
+      answers: { targets: { note: "what are the trade-offs?" } },
+    });
+  });
+
+  it("refuses an elaborate with no note to act on", () => {
+    expect(
+      buildQuestionAnswer(
+        "req-16",
+        "flow-16",
+        [single],
+        { selected: { env: ["prod"] }, custom: {} },
+        "elaborate",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("outbound wire frame", () => {
+  it("sends the rich envelope with the answer's mode", () => {
+    const answer = buildQuestionAnswer("req-17", "flow-17", [single], {
+      selected: { env: ["prod"] },
+      custom: {},
+    });
+    expect(answerToWire(answer!)).toEqual({
+      type: "extension_ui_response",
+      id: "req-17",
+      ask: {
+        flow_id: "flow-17",
+        kind: "answer",
+        mode: "submit",
+        answers: { env: { values: ["prod"] } },
+      },
+    });
+  });
+
+  it("carries elaborate all the way to the wire", () => {
+    const answer = buildQuestionAnswer(
+      "req-18",
+      "flow-18",
+      [single],
+      { selected: {}, custom: {}, notes: { env: "explain both" } },
+      "elaborate",
+    );
+    expect(answerToWire(answer!)).toMatchObject({
+      ask: { mode: "elaborate", answers: { env: { note: "explain both" } } },
+    });
+  });
+
+  it("cancels through the ask envelope when a flow id is known", () => {
+    expect(answerToWire(cancelAnswer("req-19", "flow-19"))).toEqual({
+      type: "extension_ui_response",
+      id: "req-19",
+      ask: { flow_id: "flow-19", kind: "cancel" },
+    });
+  });
+
+  it("falls back to the bare label without a flow id", () => {
+    const answer = buildQuestionAnswer("req-20", undefined, [single], {
+      selected: { env: ["staging"] },
+      custom: {},
+    });
+    expect(answerToWire(answer!)).toEqual({
+      type: "extension_ui_response",
+      id: "req-20",
+      value: "Staging",
+    });
   });
 });

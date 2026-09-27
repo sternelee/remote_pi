@@ -20,6 +20,7 @@ import { parseQrPayload, DEFAULT_RELAY_URL, toWsRelayUrl } from "../pairing/qr";
 import { uuid7 } from "../protocol/uuid7";
 import type {
   ActionName,
+  AskAnswerMode,
   ClientMessage,
   AskAnswerWire,
   ControlInbound,
@@ -52,6 +53,7 @@ import {
   markAnswered,
   type TranscriptState,
 } from "./transcript";
+import { answerToWire } from "./answers";
 import {
   emptyUiControl,
   isUiControl,
@@ -97,6 +99,8 @@ export interface QuestionAnswer {
   summary: string;
   /** Present when the prompt carried an `ask` envelope. */
   flowId?: string;
+  /** pi-ask exit for the rich path; absent means `submit`. */
+  mode?: AskAnswerMode;
   /** Structured answers keyed by question id (rich path). */
   answers?: Record<string, AskAnswerWire>;
   /** Chosen option label (degraded path). */
@@ -825,39 +829,12 @@ export function usePiSession(): PiSession {
       const client = clientRef.current;
       if (!client) return;
 
-      // Cancel wins over any answer: it is an explicit dismissal.
-      if (answer.cancelled) {
-        client.send(
-          answer.flowId
-            ? { type: "extension_ui_response", id: answer.requestId, ask: { flow_id: answer.flowId, kind: "cancel" } }
-            : { type: "extension_ui_response", id: answer.requestId, cancelled: true },
-        );
-        setTranscript((prev) => markAnswered(prev, answer.requestId, answer.summary, true));
-        return;
-      }
-
-      if (answer.flowId && answer.answers) {
-        // Rich path: the structured answers supersede the value/confirmed
-        // discriminators, and option *values* are what pi-ask expects.
-        client.send({
-          type: "extension_ui_response",
-          id: answer.requestId,
-          ask: {
-            flow_id: answer.flowId,
-            kind: "answer",
-            mode: "submit",
-            answers: answer.answers,
-          },
-        });
-      } else {
-        // Degraded path: the Pi maps this label back to an option value.
-        client.send({
-          type: "extension_ui_response",
-          id: answer.requestId,
-          value: answer.label ?? answer.summary,
-        });
-      }
-      setTranscript((prev) => markAnswered(prev, answer.requestId, answer.summary));
+      // Cancel, rich envelope, or degraded label — all three shapes live in
+      // `answerToWire` so the mode is not pinned to `submit` here.
+      client.send(answerToWire(answer));
+      setTranscript((prev) =>
+        markAnswered(prev, answer.requestId, answer.summary, Boolean(answer.cancelled), answer.mode),
+      );
     },
     [],
   );

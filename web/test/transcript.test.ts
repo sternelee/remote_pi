@@ -531,6 +531,20 @@ describe("interactive prompts", () => {
     const cancelled = markAnswered(state, "q7", "cancelled", true);
     expect(byKind(cancelled, "question")[0]).toMatchObject({ answered: "cancelled", cancelled: true });
   });
+
+  it("records the pi-ask exit so the resolved line can distinguish elaborate", () => {
+    const state = fold([
+      { type: "extension_ui_request", id: "q8", method: "select", title: "Pick", options: ["one"] },
+    ]);
+    const elaborated = markAnswered(state, "q8", "explain first", false, "elaborate");
+    expect(byKind(elaborated, "question")[0]).toMatchObject({
+      answered: "explain first",
+      mode: "elaborate",
+    });
+    // The default exit stays unset on the entry — "answered" is the rendering.
+    const submitted = markAnswered(state, "q8", "one");
+    expect(byKind(submitted, "question")[0]).toMatchObject({ answered: "one", mode: undefined });
+  });
 });
 
 describe("steering", () => {

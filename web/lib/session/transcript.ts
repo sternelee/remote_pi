@@ -13,6 +13,7 @@
  */
 
 import type {
+  AskAnswerMode,
   ExtensionUiMethod,
   ServerMessage,
   SessionHistoryEvent,
@@ -108,6 +109,8 @@ export type TimelineEntry =
       /** Set once answered; the prompt renders as resolved instead. */
       answered?: string;
       cancelled?: boolean;
+      /** pi-ask exit used — `elaborate` renders a different resolved line. */
+      mode?: AskAnswerMode;
       ts?: number;
     };
 
@@ -752,11 +755,12 @@ export function markAnswered(
   questionId: string,
   answer: string,
   cancelled = false,
+  mode?: AskAnswerMode,
 ): TranscriptState {
   return {
     ...state,
     entries: state.entries.map((e) =>
-      e.kind === "question" && e.id === questionId ? { ...e, answered: answer, cancelled } : e,
+      e.kind === "question" && e.id === questionId ? { ...e, answered: answer, cancelled, mode } : e,
     ),
   };
 }

@@ -323,6 +323,39 @@ Semântica dos one-way:
 - `setTitle`: define o título da janela/sessão.
 - `set_editor_text`: **substitui** o rascunho do composer (não envia nada).
 
+#### O envelope `ask` do pi-ask na resposta
+
+Prompts originados de um fluxo pi-ask (`@eko24ive/pi-ask`) trazem o envelope
+`ask` no `extension_ui_request` (com `flow_id`, `questions` e o schema completo
+das perguntas — ver `plan/57`). O cliente que renderizou o fluxo completo
+responde **só** com o envelope: `answers` (valores de opção, não rótulos)
+superam os discriminadores `value`/`confirmed`, e o roteamento é pelo
+`ask.kind`. O `id` da resposta é o próprio request id (que é o `flow_id`):
+
+```jsonc
+{ "type": "extension_ui_response", "id": "<request id>",
+  "ask": { "flow_id": "<flow id>", "kind": "answer",
+           "mode": "submit" | "elaborate",
+           "answers": { "<question id>": { "values": ["<option value>"],
+                                           "customText": "...", "note": "...",
+                                           "optionNotes": { "<option value>": "..." } } } } }
+// ou { "type": "extension_ui_response", "id": "...",
+//       "ask": { "flow_id": "...", "kind": "cancel" } }
+```
+
+- `mode: "submit"` conclui o fluxo; `mode: "elaborate"` pede que o agente
+  esclareça as notas antes de finalizar — o pi-ask move entradas só-com-nota
+  para `elaboration.items` e devolve `continuation` ao **modelo**, não ao
+  cliente remoto.
+- Uma nota conta como resposta (entradas só-com-nota são mantidas no
+  `submit`); uma pergunta `required` em branco só bloqueia o `submit`. Um
+  `elaborate` sem nenhuma nota é recusado no cliente — guarda local, não regra
+  do fio.
+- O contrato de eventos locais do pi-ask (`started`/`submit`/`submit-result`/
+  `completed`) **não** expõe `continuation`/`elaboration`: um re-ask refinado
+  chega ao cliente remoto como um fluxo novo, sem memória das respostas já
+  commitadas.
+
 ### Side-effects
 
 Os replies (`action_ok` / `models_list`) só confirmam dispatch. Efeitos visíveis chegam pelos canais normais:

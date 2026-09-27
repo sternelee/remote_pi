@@ -51,6 +51,11 @@ export interface AskAnswerWire {
   optionNotes?: Record<string, string>;
 }
 
+/** pi-ask's two exits from a flow. `submit` finalizes the answers; `elaborate`
+ *  asks the agent to clarify the attached notes first, and pi-ask hands the
+ *  model `elaboration`/`continuation` details instead of a resolution. */
+export type AskAnswerMode = "submit" | "elaborate";
+
 /**
  * Structured answer for a pi-ask flow, echoed on `extension_ui_response.ask`.
  *
@@ -62,7 +67,7 @@ export type AskResponseEnrichmentWire =
   | {
       flow_id: string;
       kind: "answer";
-      mode?: "submit" | "elaborate";
+      mode?: AskAnswerMode;
       answers: Record<string, AskAnswerWire>;
     }
   | { flow_id: string; kind: "cancel" };

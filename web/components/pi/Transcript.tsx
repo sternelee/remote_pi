@@ -220,7 +220,13 @@ function Entry({
         return (
           <Line
             label={entry.title}
-            detail={`${entry.cancelled ? "cancelled" : "answered"} · ${entry.answered}`}
+            detail={`${
+              entry.cancelled
+                ? "cancelled"
+                : entry.mode === "elaborate"
+                  ? "asked to elaborate"
+                  : "answered"
+            } · ${entry.answered}`}
             tone={DIM}
           />
         );
