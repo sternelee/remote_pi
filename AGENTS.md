@@ -1,6 +1,6 @@
 # AGENTS.md — Remote Pi
 
-Monorepo with six independently built subprojects plus planning docs. There is **no
+Monorepo with seven independently built subprojects plus planning docs. There is **no
 root task runner** (no root `package.json`, `Makefile`, or `justfile`): every build,
 test, and lint command runs from the subproject directory.
 
@@ -30,7 +30,7 @@ Authoritative docs — read the relevant one before editing a package:
 | `web/` | vinext (Next.js API on Vite) + Cloudflare Workers | Browser PWA client. Pairs with a Pi over the relay and renders the session. See [`web/README.md`](./web/README.md). |
 | `rp-s3/` | Rust + axum | Download/manifest server; `PUT /upload` takes manifests only. |
 | `plan/`, `review/` | Markdown | Numbered plans and manual smoke scripts. |
-| `.orchestration/` | Markdown / JSONL | Shared contracts (read-only) + task results (ephemeral). |
+| `.orchestration/` | Markdown / JSONL | Shared contracts (read-only) + task results (ephemeral). `tasks/` holds local notes ignored by the root `.*` gitignore rule. |
 | `scripts/` | Bash | cmux/Cockpit dispatch and docker build helpers. |
 
 ## Verification commands
@@ -85,6 +85,10 @@ CI exists only for `.github/workflows/{app-release,cockpit-release,cockpit-serve
   whenever an `*.i18n.json` changes.
 - `cockpit/lib/app/core/ui/file_icons/file_icon_map.g.dart`.
 - `cockpit/test/**/*.mocks.dart` — checked in; there is no `build_runner` step.
+- `site/public/install.sh` — a committed byte-identical copy of
+  `pi-extension/install.sh`, refreshed by `site`'s build
+  (`scripts/sync-install-sh.mjs`) because the site Docker image builds from `site/`
+  alone. Edit `pi-extension/install.sh`, never the copy.
 - `pi-extension/dist/` — `tsc` output backing `main`/`bin`; gitignored, produced by `pnpm build`.
 - `web/components/brainless/**` — vendored verbatim from the
   [brainless registry](https://brainless.swerdlow.dev/components). Edit them only
@@ -102,8 +106,11 @@ Gitignored build output: `build/`, `.dart_tool/`, `target/`, `dist/`, `.next/`, 
   pre-existing files are tracked.
 - `.cockpit/tasks.json` is versioned; every other file under `.cockpit/` is ignored
   (worktrees, local state).
-- The root `.gitignore` ignores **all dotfiles** except `.github/`. A new root-level
-  dotfile or dotted directory stays untracked until an explicit `!` rule is added.
+- The root `.gitignore` ignores **all dotfiles** (`.*`); the only `!` exceptions are
+  `.github/`, `.orchestration/results/.gitkeep`, and `.cockpit/tasks.json`. Tracked files
+  inside dotted dirs (`.orchestration/INSTRUCTIONS.md`, `contracts/`) stay tracked, but a
+  **new** file under any dotted directory — including a new contract fixture — is ignored
+  until force-added (`git add -f`).
 
 ## Conventions not enforced by tooling
 
