@@ -135,6 +135,9 @@ class _Translations$cockpit$pt_BR extends Translations$cockpit$en {
 	@override late final _Translations$cockpit$documentWindow$pt_BR documentWindow = _Translations$cockpit$documentWindow$pt_BR._(_root);
 	@override late final _Translations$cockpit$gallery$pt_BR gallery = _Translations$cockpit$gallery$pt_BR._(_root);
 	@override late final _Translations$cockpit$notebook$pt_BR notebook = _Translations$cockpit$notebook$pt_BR._(_root);
+	@override late final _Translations$cockpit$layoutPreview$pt_BR layoutPreview = _Translations$cockpit$layoutPreview$pt_BR._(_root);
+	@override late final _Translations$cockpit$telemetry$pt_BR telemetry = _Translations$cockpit$telemetry$pt_BR._(_root);
+	@override late final _Translations$cockpit$panelView$pt_BR panelView = _Translations$cockpit$panelView$pt_BR._(_root);
 }
 
 // Path: settings
@@ -493,6 +496,10 @@ class _Translations$cockpit$paneView$pt_BR extends Translations$cockpit$paneView
 	@override String get dockAsTab => 'Encaixar como aba';
 	@override String get openBrowser => 'Abrir navegador';
 	@override String get openTerminal => 'Abrir terminal';
+	@override String get openAsLayout => 'Abrir como layout';
+	@override String get openAsYaml => 'Abrir como YAML';
+	@override String get openAsPanel => 'Abrir como painel';
+	@override String get openAsHtml => 'Abrir como HTML';
 }
 
 // Path: cockpit.fileTreePanel
@@ -602,6 +609,7 @@ class _Translations$cockpit$fileTreePanel$pt_BR extends Translations$cockpit$fil
 	@override String diffError({required Object detail}) => 'Não foi possível ler o diff: ${detail}';
 	@override String get galleryTooltip => 'Galeria';
 	@override String get sectionGallery => 'GALERIA';
+	@override String get openAsHtml => 'Abrir como HTML';
 }
 
 // Path: cockpit.fileViewer
@@ -615,6 +623,7 @@ class _Translations$cockpit$fileViewer$pt_BR extends Translations$cockpit$fileVi
 	@override String get couldNotLoadImage => 'Não foi possível carregar a imagem.';
 	@override String get preview => 'Pré-visualização';
 	@override String get source => 'Código-fonte';
+	@override String get reload => 'Recarregar';
 }
 
 // Path: cockpit.workspaceSettingsDialog
@@ -1131,6 +1140,7 @@ class _Translations$cockpit$gallery$pt_BR extends Translations$cockpit$gallery$e
 	@override late final _Translations$cockpit$gallery$notebook$pt_BR notebook = _Translations$cockpit$gallery$notebook$pt_BR._(_root);
 	@override late final _Translations$cockpit$gallery$workspaceEnv$pt_BR workspaceEnv = _Translations$cockpit$gallery$workspaceEnv$pt_BR._(_root);
 	@override late final _Translations$cockpit$gallery$diagram$pt_BR diagram = _Translations$cockpit$gallery$diagram$pt_BR._(_root);
+	@override late final _Translations$cockpit$gallery$panel$pt_BR panel = _Translations$cockpit$gallery$panel$pt_BR._(_root);
 }
 
 // Path: cockpit.notebook
@@ -1162,6 +1172,112 @@ class _Translations$cockpit$notebook$pt_BR extends Translations$cockpit$notebook
 	@override String deleteTagConfirm({required Object name, required Object count}) => 'Remover “${name}” de ${count} notas? As notas ficam.';
 	@override String get showList => 'Mostrar lista de notas';
 	@override String get hideList => 'Ocultar lista de notas';
+}
+
+// Path: cockpit.layoutPreview
+class _Translations$cockpit$layoutPreview$pt_BR extends Translations$cockpit$layoutPreview$en {
+	_Translations$cockpit$layoutPreview$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
+
+	final TranslationsPtBr _root; // ignore: unused_field
+
+	// Translations
+	@override String get applyFailedTitle => 'Não foi possível aplicar o layout';
+	@override String get applyInCockpit => 'Aplicar no Cockpit';
+	@override String get applyNewWorkspace => 'Abrir como novo workspace';
+	@override String applyTo({required Object workspace}) => 'Aplicar em ${workspace}';
+	@override String get autorunWorktree => 'autorun: worktree. Este layout também é aplicado sozinho quando você cria uma worktree do workspace onde ele está.';
+	@override String get command => 'Comando';
+	@override String get folder => 'Pasta';
+	@override String get noCommand => 'sem comando, abre um shell';
+	@override String get replaceConfirm => 'Substituir layout';
+	@override String replaceMessage({required Object n}) => '${n} abas abertas deste workspace serão fechadas, inclusive as com trabalho em andamento.';
+	@override String replaceTitle({required Object workspace}) => 'Substituir o layout de ${workspace}?';
+	@override String get skippedTitle => 'Não criados neste sistema';
+	@override String get splitDown => 'divide abaixo';
+	@override String get splitRight => 'divide à direita';
+	@override String get splitTab => 'aba';
+	@override String subtitle({required Object n}) => 'Este layout abre ${n} terminais. Leia os comandos antes de aplicar.';
+}
+
+// Path: cockpit.telemetry
+class _Translations$cockpit$telemetry$pt_BR extends Translations$cockpit$telemetry$en {
+	_Translations$cockpit$telemetry$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
+
+	final TranslationsPtBr _root; // ignore: unused_field
+
+	// Translations
+	@override String get tooltip => 'Telemetria';
+	@override String get title => 'Telemetria';
+	@override String liveRuns({required Object n}) => '${n} ativos';
+	@override String get noWorkspace => 'Abra um workspace para ver a telemetria dele.';
+	@override String get empty => 'Nada aqui ainda.';
+	@override String get emptyFiltered => 'Nada aqui ainda.';
+	@override String get searchHint => 'Filtrar casos';
+	@override String get chipOpen => 'Abertos';
+	@override String get chipNew => 'Novos';
+	@override String get chipResolved => 'Resolvidos';
+	@override String get chipIgnored => 'Ignorados';
+	@override String get chipWarnings => 'Avisos';
+	@override String get tagNew => 'novo';
+	@override String get tagRegression => 'regressão';
+	@override String get tagResolved => 'resolvido';
+	@override String get tagIgnored => 'ignorado';
+	@override String get srcTask => 'task';
+	@override String get srcWrapper => 'cockpit telemetry';
+	@override String run({required Object id}) => 'run ${id}';
+	@override String get resolve => 'Marcar resolvido';
+	@override String get ignore => 'Ignorar (some para os agentes também)';
+	@override String get reopen => 'Reabrir';
+	@override String get clear => 'Limpar ocorrências';
+	@override String get clearRun => 'Limpar este run';
+	@override String get clearProject => 'Limpar projeto';
+	@override String openFile({required Object location}) => 'Abrir ${location}';
+	@override String get showInTerminal => 'Ver no terminal';
+	@override String get copyCommand => 'Copiar comando da CLI';
+	@override String get copied => 'Copiado';
+	@override String get statusOpen => 'Aberto';
+	@override String get statusResolved => 'Resolvido';
+	@override String get statusIgnored => 'Ignorado';
+	@override String get occurrences => 'Ocorrências';
+	@override String inRuns({required Object n}) => 'em ${n} runs';
+	@override String get first => 'Primeira';
+	@override String get last => 'Última';
+	@override String get origin => 'Origem';
+	@override String get sectionStack => 'Stack';
+	@override String get stackHint => 'frames do projeto em destaque · clique abre o arquivo';
+	@override String get sectionCorrelated => 'Log correlacionado';
+	@override String get correlatedHint => 'o JSON mais próximo antes do erro, no mesmo run';
+	@override String get none => 'nenhum';
+	@override String get sectionRuns => 'Ocorrências por run';
+	@override String get runsHint => 'mesma chave (cwd, comando): é assim que novo e regressão são calculados';
+	@override String get sectionContext => 'Contexto cru';
+	@override String get contextHint => 'linhas do terminal ao redor da última ocorrência';
+	@override String get current => 'atual';
+	@override String fingerprintHint({required Object location}) => 'fingerprint = tipo + mensagem normalizada + ${location}';
+	@override String get blameUncommitted => 'alterado no working tree';
+	@override String blameCommit({required Object ago, required Object sha}) => 'alterado ${ago} (${sha})';
+	@override String get justNow => 'agora';
+	@override String minutesAgo({required Object n}) => 'há ${n} min';
+	@override String hoursAgo({required Object n}) => 'há ${n} h';
+	@override String daysAgo({required Object n}) => 'há ${n} d';
+	@override String get resolvedToast => 'Resolvido. Se voltar num run futuro, reaparece como regressão.';
+	@override String get ignoredToast => 'Ignorado. Os agentes não veem mais (salvo --include-ignored).';
+	@override String get clearedToast => 'Ocorrências apagadas. As regras de triagem ficam.';
+	@override String get byHuman => 'por você';
+	@override String get byAgent => 'pelo agente';
+	@override String caseTabTitle({required Object type, required Object file}) => '${type} · ${file}';
+}
+
+// Path: cockpit.panelView
+class _Translations$cockpit$panelView$pt_BR extends Translations$cockpit$panelView$en {
+	_Translations$cockpit$panelView$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
+
+	final TranslationsPtBr _root; // ignore: unused_field
+
+	// Translations
+	@override String get unavailable => 'Painéis precisam da web view embutida, que ainda não existe no Linux.';
+	@override String get openInBrowser => 'Abrir no navegador';
+	@override String get openAsHtml => 'Abrir como HTML';
 }
 
 // Path: settings.language
@@ -1433,6 +1549,17 @@ class _Translations$cockpit$gallery$diagram$pt_BR extends Translations$cockpit$g
 	@override String get description => 'Um markdown com um diagrama Mermaid: fluxogramas, sequências, modelos de classe e Gantt, renderizados no preview.';
 }
 
+// Path: cockpit.gallery.panel
+class _Translations$cockpit$gallery$panel$pt_BR extends Translations$cockpit$gallery$panel$en {
+	_Translations$cockpit$gallery$panel$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
+
+	final TranslationsPtBr _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'Painel';
+	@override String get description => 'Uma página HTML com ponte para o app: os botões rodam comandos da CLI do Cockpit e do shell nesta máquina. Um playground para dashboards rápidos.';
+}
+
 // Path: cockpit.notebook.format
 class _Translations$cockpit$notebook$format$pt_BR extends Translations$cockpit$notebook$format$en {
 	_Translations$cockpit$notebook$format$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
@@ -1509,6 +1636,8 @@ class _Translations$settings$page$general$pt_BR extends Translations$settings$pa
 	@override String get checkUpdatesTitle => 'Verificar atualizações';
 	@override String get checkUpdatesDesc => 'Com que frequência o Cockpit deve procurar novas versões.';
 	@override late final _Translations$settings$page$general$updateFrequency$pt_BR updateFrequency = _Translations$settings$page$general$updateFrequency$pt_BR._(_root);
+	@override String get telemetryPushTitle => 'Avisar agentes sobre erros novos';
+	@override String get telemetryPushDesc => 'Quando uma task ou comando observado gera um erro que o agente daquela aba ainda não viu, envia uma linha de resumo assim que o turno dele termina.';
 }
 
 // Path: settings.page.diagnostics
@@ -1951,6 +2080,10 @@ extension on TranslationsPtBr {
 			'cockpit.paneView.dockAsTab' => 'Encaixar como aba',
 			'cockpit.paneView.openBrowser' => 'Abrir navegador',
 			'cockpit.paneView.openTerminal' => 'Abrir terminal',
+			'cockpit.paneView.openAsLayout' => 'Abrir como layout',
+			'cockpit.paneView.openAsYaml' => 'Abrir como YAML',
+			'cockpit.paneView.openAsPanel' => 'Abrir como painel',
+			'cockpit.paneView.openAsHtml' => 'Abrir como HTML',
 			'cockpit.fileTreePanel.viewDiff' => 'Ver Diff',
 			'cockpit.fileTreePanel.commit' => 'Commit',
 			'cockpit.fileTreePanel.stageAndCommit' => 'Stage e Commit',
@@ -2051,10 +2184,12 @@ extension on TranslationsPtBr {
 			'cockpit.fileTreePanel.diffError' => ({required Object detail}) => 'Não foi possível ler o diff: ${detail}',
 			'cockpit.fileTreePanel.galleryTooltip' => 'Galeria',
 			'cockpit.fileTreePanel.sectionGallery' => 'GALERIA',
+			'cockpit.fileTreePanel.openAsHtml' => 'Abrir como HTML',
 			'cockpit.fileViewer.cantOpen' => 'Não é possível abrir este arquivo.',
 			'cockpit.fileViewer.couldNotLoadImage' => 'Não foi possível carregar a imagem.',
 			'cockpit.fileViewer.preview' => 'Pré-visualização',
 			'cockpit.fileViewer.source' => 'Código-fonte',
+			'cockpit.fileViewer.reload' => 'Recarregar',
 			'cockpit.workspaceSettingsDialog.choosePhotoTitle' => 'Escolher foto do workspace',
 			'cockpit.workspaceSettingsDialog.title' => 'Configurações do workspace',
 			'cockpit.workspaceSettingsDialog.namePlaceholder' => 'Nome do workspace',
@@ -2256,14 +2391,14 @@ extension on TranslationsPtBr {
 			'cockpit.projectsRail.settings' => 'Configurações',
 			'cockpit.projectsRail.mergeToParent' => 'Mesclar no pai',
 			'cockpit.projectsRail.updateFromParent' => 'Atualizar a partir do pai',
+			_ => null,
+		} ?? switch (path) {
 			'cockpit.projectsRail.forkWorktree' => 'Criar worktree derivada',
 			'cockpit.projectsRail.copyBranch' => 'Copiar branch',
 			'cockpit.projectsRail.remove' => 'Remover',
 			'cockpit.projectsRail.moveToRealm' => 'Mover para realm',
 			'cockpit.projectsRail.copyWorkspaceId' => 'Copiar id do workspace',
 			'cockpit.projectsRail.rename' => 'Renomear',
-			_ => null,
-		} ?? switch (path) {
 			'cockpit.projectsRail.close' => 'Fechar',
 			'cockpit.projectsRail.newRealm' => 'Novo realm…',
 			'cockpit.projectsRail.manageRealms' => 'Gerenciar realms…',
@@ -2382,6 +2517,8 @@ extension on TranslationsPtBr {
 			'cockpit.gallery.workspaceEnv.description' => 'Variáveis injetadas em todo terminal deste workspace. Coloque tokens ou logins de API aqui em vez de colar no prompt do agente. Fica fora do git.',
 			'cockpit.gallery.diagram.title' => 'Diagrama',
 			'cockpit.gallery.diagram.description' => 'Um markdown com um diagrama Mermaid: fluxogramas, sequências, modelos de classe e Gantt, renderizados no preview.',
+			'cockpit.gallery.panel.title' => 'Painel',
+			'cockpit.gallery.panel.description' => 'Uma página HTML com ponte para o app: os botões rodam comandos da CLI do Cockpit e do shell nesta máquina. Um playground para dashboards rápidos.',
 			'cockpit.notebook.notes' => 'Notas',
 			'cockpit.notebook.newNote' => 'Nova nota',
 			'cockpit.notebook.searchPlaceholder' => 'Buscar notas',
@@ -2420,6 +2557,85 @@ extension on TranslationsPtBr {
 			'cockpit.notebook.deleteTagConfirm' => ({required Object name, required Object count}) => 'Remover “${name}” de ${count} notas? As notas ficam.',
 			'cockpit.notebook.showList' => 'Mostrar lista de notas',
 			'cockpit.notebook.hideList' => 'Ocultar lista de notas',
+			'cockpit.layoutPreview.applyFailedTitle' => 'Não foi possível aplicar o layout',
+			'cockpit.layoutPreview.applyInCockpit' => 'Aplicar no Cockpit',
+			'cockpit.layoutPreview.applyNewWorkspace' => 'Abrir como novo workspace',
+			'cockpit.layoutPreview.applyTo' => ({required Object workspace}) => 'Aplicar em ${workspace}',
+			'cockpit.layoutPreview.autorunWorktree' => 'autorun: worktree. Este layout também é aplicado sozinho quando você cria uma worktree do workspace onde ele está.',
+			'cockpit.layoutPreview.command' => 'Comando',
+			'cockpit.layoutPreview.folder' => 'Pasta',
+			'cockpit.layoutPreview.noCommand' => 'sem comando, abre um shell',
+			'cockpit.layoutPreview.replaceConfirm' => 'Substituir layout',
+			'cockpit.layoutPreview.replaceMessage' => ({required Object n}) => '${n} abas abertas deste workspace serão fechadas, inclusive as com trabalho em andamento.',
+			'cockpit.layoutPreview.replaceTitle' => ({required Object workspace}) => 'Substituir o layout de ${workspace}?',
+			'cockpit.layoutPreview.skippedTitle' => 'Não criados neste sistema',
+			'cockpit.layoutPreview.splitDown' => 'divide abaixo',
+			'cockpit.layoutPreview.splitRight' => 'divide à direita',
+			'cockpit.layoutPreview.splitTab' => 'aba',
+			'cockpit.layoutPreview.subtitle' => ({required Object n}) => 'Este layout abre ${n} terminais. Leia os comandos antes de aplicar.',
+			'cockpit.telemetry.tooltip' => 'Telemetria',
+			'cockpit.telemetry.title' => 'Telemetria',
+			'cockpit.telemetry.liveRuns' => ({required Object n}) => '${n} ativos',
+			'cockpit.telemetry.noWorkspace' => 'Abra um workspace para ver a telemetria dele.',
+			'cockpit.telemetry.empty' => 'Nada aqui ainda.',
+			'cockpit.telemetry.emptyFiltered' => 'Nada aqui ainda.',
+			'cockpit.telemetry.searchHint' => 'Filtrar casos',
+			'cockpit.telemetry.chipOpen' => 'Abertos',
+			'cockpit.telemetry.chipNew' => 'Novos',
+			'cockpit.telemetry.chipResolved' => 'Resolvidos',
+			'cockpit.telemetry.chipIgnored' => 'Ignorados',
+			'cockpit.telemetry.chipWarnings' => 'Avisos',
+			'cockpit.telemetry.tagNew' => 'novo',
+			'cockpit.telemetry.tagRegression' => 'regressão',
+			'cockpit.telemetry.tagResolved' => 'resolvido',
+			'cockpit.telemetry.tagIgnored' => 'ignorado',
+			'cockpit.telemetry.srcTask' => 'task',
+			'cockpit.telemetry.srcWrapper' => 'cockpit telemetry',
+			'cockpit.telemetry.run' => ({required Object id}) => 'run ${id}',
+			'cockpit.telemetry.resolve' => 'Marcar resolvido',
+			'cockpit.telemetry.ignore' => 'Ignorar (some para os agentes também)',
+			'cockpit.telemetry.reopen' => 'Reabrir',
+			'cockpit.telemetry.clear' => 'Limpar ocorrências',
+			'cockpit.telemetry.clearRun' => 'Limpar este run',
+			'cockpit.telemetry.clearProject' => 'Limpar projeto',
+			'cockpit.telemetry.openFile' => ({required Object location}) => 'Abrir ${location}',
+			'cockpit.telemetry.showInTerminal' => 'Ver no terminal',
+			'cockpit.telemetry.copyCommand' => 'Copiar comando da CLI',
+			'cockpit.telemetry.copied' => 'Copiado',
+			'cockpit.telemetry.statusOpen' => 'Aberto',
+			'cockpit.telemetry.statusResolved' => 'Resolvido',
+			'cockpit.telemetry.statusIgnored' => 'Ignorado',
+			'cockpit.telemetry.occurrences' => 'Ocorrências',
+			'cockpit.telemetry.inRuns' => ({required Object n}) => 'em ${n} runs',
+			'cockpit.telemetry.first' => 'Primeira',
+			'cockpit.telemetry.last' => 'Última',
+			'cockpit.telemetry.origin' => 'Origem',
+			'cockpit.telemetry.sectionStack' => 'Stack',
+			'cockpit.telemetry.stackHint' => 'frames do projeto em destaque · clique abre o arquivo',
+			'cockpit.telemetry.sectionCorrelated' => 'Log correlacionado',
+			'cockpit.telemetry.correlatedHint' => 'o JSON mais próximo antes do erro, no mesmo run',
+			'cockpit.telemetry.none' => 'nenhum',
+			'cockpit.telemetry.sectionRuns' => 'Ocorrências por run',
+			'cockpit.telemetry.runsHint' => 'mesma chave (cwd, comando): é assim que novo e regressão são calculados',
+			'cockpit.telemetry.sectionContext' => 'Contexto cru',
+			'cockpit.telemetry.contextHint' => 'linhas do terminal ao redor da última ocorrência',
+			'cockpit.telemetry.current' => 'atual',
+			'cockpit.telemetry.fingerprintHint' => ({required Object location}) => 'fingerprint = tipo + mensagem normalizada + ${location}',
+			'cockpit.telemetry.blameUncommitted' => 'alterado no working tree',
+			'cockpit.telemetry.blameCommit' => ({required Object ago, required Object sha}) => 'alterado ${ago} (${sha})',
+			'cockpit.telemetry.justNow' => 'agora',
+			'cockpit.telemetry.minutesAgo' => ({required Object n}) => 'há ${n} min',
+			'cockpit.telemetry.hoursAgo' => ({required Object n}) => 'há ${n} h',
+			'cockpit.telemetry.daysAgo' => ({required Object n}) => 'há ${n} d',
+			'cockpit.telemetry.resolvedToast' => 'Resolvido. Se voltar num run futuro, reaparece como regressão.',
+			'cockpit.telemetry.ignoredToast' => 'Ignorado. Os agentes não veem mais (salvo --include-ignored).',
+			'cockpit.telemetry.clearedToast' => 'Ocorrências apagadas. As regras de triagem ficam.',
+			'cockpit.telemetry.byHuman' => 'por você',
+			'cockpit.telemetry.byAgent' => 'pelo agente',
+			'cockpit.telemetry.caseTabTitle' => ({required Object type, required Object file}) => '${type} · ${file}',
+			'cockpit.panelView.unavailable' => 'Painéis precisam da web view embutida, que ainda não existe no Linux.',
+			'cockpit.panelView.openInBrowser' => 'Abrir no navegador',
+			'cockpit.panelView.openAsHtml' => 'Abrir como HTML',
 			'settings.language.title' => 'Idioma',
 			'settings.language.system' => 'Sistema',
 			'settings.language.english' => 'Inglês',
@@ -2453,6 +2669,8 @@ extension on TranslationsPtBr {
 			'settings.page.general.updateFrequency.weekly' => 'Semanalmente',
 			'settings.page.general.updateFrequency.monthly' => 'Mensalmente',
 			'settings.page.general.updateFrequency.never' => 'Nunca',
+			'settings.page.general.telemetryPushTitle' => 'Avisar agentes sobre erros novos',
+			'settings.page.general.telemetryPushDesc' => 'Quando uma task ou comando observado gera um erro que o agente daquela aba ainda não viu, envia uma linha de resumo assim que o turno dele termina.',
 			'settings.page.diagnostics.sectionTitle' => 'Diagnóstico',
 			'settings.page.diagnostics.logFileTitle' => 'Arquivo de log',
 			'settings.page.diagnostics.logFileDesc' => ({required Object days, required Object path}) => 'Erros e eventos de inicialização são registrados aqui, mantidos por ${days} dias.\n${path}',

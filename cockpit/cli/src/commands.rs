@@ -284,7 +284,10 @@ pub fn new_workspace(args: &[String]) -> ! {
             host = Some(args[i].clone());
             i += 1;
             continue;
-        } else if let Some(v) = a.strip_prefix("--host=").or_else(|| a.strip_prefix("--remote=")) {
+        } else if let Some(v) = a
+            .strip_prefix("--host=")
+            .or_else(|| a.strip_prefix("--remote="))
+        {
             host = Some(v.to_string());
             i += 1;
             continue;
@@ -339,7 +342,10 @@ pub fn new_workspace(args: &[String]) -> ! {
 
     let raw_path = match path {
         Some(p) if !p.is_empty() => p,
-        _ => die("cockpit new-workspace: missing <path> (or --path <path>)", 2),
+        _ => die(
+            "cockpit new-workspace: missing <path> (or --path <path>)",
+            2,
+        ),
     };
 
     let target_path = if host.is_some() {
@@ -426,15 +432,12 @@ pub fn close_workspace(args: &[String]) -> ! {
 
     let mut cmd_args = Map::new();
     if let Some(t) = target.filter(|t| !t.is_empty()) {
-        let resolved = if t.starts_with('~')
-            || t.starts_with('.')
-            || t.contains('/')
-            || t.contains('\\')
-        {
-            resolve_path(&t)
-        } else {
-            t
-        };
+        let resolved =
+            if t.starts_with('~') || t.starts_with('.') || t.contains('/') || t.contains('\\') {
+                resolve_path(&t)
+            } else {
+                t
+            };
         cmd_args.insert("target".into(), json!(resolved));
     }
     let mut req = json!({"cmd": "close-workspace", "args": Value::Object(cmd_args)});
@@ -454,7 +457,8 @@ pub fn close_workspace(args: &[String]) -> ! {
     std::process::exit(0)
 }
 
-const RENAME_WORKSPACE_HELP: &str = "cockpit rename-workspace [<id|path>] <new-name> [--tab-id <id>] [--json]
+const RENAME_WORKSPACE_HELP: &str =
+    "cockpit rename-workspace [<id|path>] <new-name> [--tab-id <id>] [--json]
   Renames the display title of a workspace in Cockpit's rail.
   Target may be a workspace UUID, directory path, or unique name.
   Without target, renames the workspace owning the current tab.
@@ -512,15 +516,12 @@ pub fn rename_workspace(args: &[String]) -> ! {
 
     let mut cmd_args = Map::new();
     if let Some(t) = target_val.filter(|t| !t.is_empty()) {
-        let resolved = if t.starts_with('~')
-            || t.starts_with('.')
-            || t.contains('/')
-            || t.contains('\\')
-        {
-            resolve_path(&t)
-        } else {
-            t
-        };
+        let resolved =
+            if t.starts_with('~') || t.starts_with('.') || t.contains('/') || t.contains('\\') {
+                resolve_path(&t)
+            } else {
+                t
+            };
         cmd_args.insert("target".into(), json!(resolved));
     }
     cmd_args.insert("name".into(), json!(raw_name));
@@ -893,7 +894,10 @@ pub fn task(cmd: &str, args: &[String]) -> ! {
     if parsed.json {
         println!("{}", data);
     } else {
-        let running = data.get("running").and_then(|v| v.as_bool()).unwrap_or(false);
+        let running = data
+            .get("running")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         println!("{target}: {}", if running { "running" } else { "stopped" });
     }
     std::process::exit(0)
@@ -1705,4 +1709,124 @@ pub fn note(args: &[String]) -> ! {
         }
         _ => die(&format!("cockpit note: unknown subcommand \"{sub}\""), 2),
     }
+}
+
+// ---- exec (plano 67) --------------------------------------------------------
+
+const EXEC_HELP: &str = "cockpit exec [--cwd <dir>] [--timeout <s>] [--json] [--] <command...>
+  Runs <command> through the app (a login shell on this machine) and prints
+  its output. Everything after the flags (or after `--`) is the command line,
+  passed to the shell as-is, so pipes and quotes work like in a terminal.
+  --cwd      working directory (default: current directory)
+  --timeout  seconds before the process is killed (default 60)
+  --json     print {ok, code, stdout, stderr, timedOut} as one JSON line
+  Exit code = the command's exit code (124 on timeout).";
+
+pub fn exec(args: &[String]) -> ! {
+    let mut cwd: Option<String> = None;
+    let mut timeout: Option<u64> = None;
+    let mut json_out = false;
+    let mut tab_id: Option<String> = None;
+    let mut command: Vec<String> = Vec::new();
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = args[i].as_str();
+        match a {
+            "--help" | "-h" => {
+                println!("{EXEC_HELP}");
+                std::process::exit(0)
+            }
+            "--cwd" => {
+                i += 1;
+                cwd = Some(
+                    args.get(i)
+                        .cloned()
+                        .unwrap_or_else(|| die("cockpit exec: --cwd requires a value", 2)),
+                );
+            }
+            "--timeout" => {
+                i += 1;
+                let raw = args
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| die("cockpit exec: --timeout requires a value", 2));
+                timeout = Some(match raw.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(_) => die("cockpit exec: --timeout requires a non-negative integer", 2),
+                });
+            }
+            "--json" => json_out = true,
+            "--tab-id" | "-t" => {
+                i += 1;
+                tab_id = Some(
+                    args.get(i)
+                        .cloned()
+                        .unwrap_or_else(|| die("cockpit exec: --tab-id requires a value", 2)),
+                );
+            }
+            "--" => {
+                command.extend(args[i + 1..].iter().cloned());
+                break;
+            }
+            _ if a.starts_with("--") => {
+                die(&format!("cockpit exec: unknown flag {a}\n{EXEC_HELP}"), 2)
+            }
+            _ => {
+                command.extend(args[i..].iter().cloned());
+                break;
+            }
+        }
+        i += 1;
+    }
+    if command.is_empty() {
+        die(&format!("cockpit exec: missing command\n{EXEC_HELP}"), 2);
+    }
+    let line = command.join(" ");
+    let dir = cwd.map(|d| resolve_path(&d)).or_else(|| {
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned())
+    });
+    let mut cmd_args = Map::new();
+    cmd_args.insert("command".into(), json!(line));
+    if let Some(d) = dir {
+        cmd_args.insert("cwd".into(), json!(d));
+    }
+    if let Some(t) = timeout {
+        cmd_args.insert("timeout".into(), json!(t));
+    }
+    let mut req = json!({"cmd": "exec", "args": Value::Object(cmd_args)});
+    with_tab_id(&mut req, tab_id.or_else(self_tab_id));
+    // Folga sobre o timeout do processo: o app mata o filho e ainda responde.
+    let wait = Duration::from_secs(timeout.unwrap_or(60) + 5);
+    let resp = transport::request(req, wait);
+    if !is_ok(&resp) {
+        fail_with(&resp);
+    }
+    let data = resp.get("data").cloned().unwrap_or_else(|| json!({}));
+    let code = data.get("code").and_then(|v| v.as_i64()).unwrap_or(1) as i32;
+    if json_out {
+        let mut out = data.clone();
+        out["ok"] = json!(code == 0);
+        println!("{out}");
+        std::process::exit(code)
+    }
+    let stdout = field(&data, "stdout");
+    let stderr = field(&data, "stderr");
+    if !stdout.is_empty() {
+        print!("{stdout}");
+        if !stdout.ends_with('\n') {
+            println!();
+        }
+    }
+    if !stderr.is_empty() {
+        eprint!("{stderr}");
+        if !stderr.ends_with('\n') {
+            eprintln!();
+        }
+    }
+    if data.get("timedOut") == Some(&Value::Bool(true)) {
+        eprintln!("cockpit exec: timed out");
+    }
+    std::process::exit(code)
 }

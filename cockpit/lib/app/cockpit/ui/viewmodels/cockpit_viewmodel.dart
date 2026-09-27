@@ -6,18 +6,23 @@ import 'dart:io'
         File,
         FileMode,
         FileSystemEntity,
+        FileSystemEntityType,
         FileSystemException,
         Platform;
 import 'dart:math' show max;
 
 import 'package:cockpit/app/core/data/setup/remote_pi_resolver.dart';
+import 'package:cockpit/app/core/utils/shell_command.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:url_launcher/url_launcher.dart' as url_launcher;
+import 'package:window_manager/window_manager.dart';
 
 import 'package:cockpit/app/cockpit/domain/contracts/app_launcher.dart';
+import 'package:cockpit/app/cockpit/domain/services/terminal_path_resolver.dart';
 import 'package:cockpit/app/cockpit/domain/services/db_query_service.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/content_searcher.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/file_change_watcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_reader.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_searcher.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/file_system_reader.dart';
@@ -64,6 +69,7 @@ import 'package:cockpit/app/cockpit/domain/entities/git_history_file_change.dart
 import 'package:cockpit/app/cockpit/domain/git_history_parsers.dart';
 import 'package:cockpit/app/cockpit/domain/entities/layout_spec.dart';
 import 'package:cockpit/app/cockpit/domain/services/layout_apply_runner.dart';
+import 'package:cockpit/app/cockpit/domain/services/layout_destinations.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_file_status.dart';
 import 'package:cockpit/app/cockpit/domain/entities/git_info.dart';
 import 'package:cockpit/app/cockpit/domain/entities/launchable_app.dart';
@@ -96,12 +102,16 @@ import 'package:cockpit/app/cockpit/ui/session/redis_browser_session.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_discovery.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/task_runner_gateway.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_output_session.dart';
+import 'package:cockpit/app/cockpit/ui/session/telemetry_case_session.dart';
 import 'package:cockpit/app/cockpit/ui/session/task_terminal_store.dart';
 import 'package:cockpit/app/cockpit/domain/contracts/terminal_scrollback_store.dart';
 import 'package:cockpit/app/cockpit/domain/services/terminal_harness_monitor.dart';
 import 'package:cockpit/app/cockpit/ui/session/terminal_session.dart';
 import 'package:cockpit/app/cockpit/ui/states/pane_node.dart';
 import 'package:cockpit/app/cockpit/ui/viewmodels/cockpit_cli_handler.dart';
+import 'package:cockpit/app/cockpit/ui/viewmodels/telemetry_cli_handler.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/telemetry_ingest.dart';
+import 'package:cockpit/app/cockpit/domain/contracts/telemetry_store.dart';
 import 'package:cockpit_remote/cockpit_remote.dart' show RemoteCliCommand;
 import 'package:cockpit/app/cockpit/data/filesystem/unified_diff_parser.dart';
 import 'package:cockpit/app/cockpit/domain/entities/remote_host.dart';
@@ -137,6 +147,7 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     this._sidecar,
     this._terminalProfiles,
     this._fileReader,
+    this._fileChanges,
     this._layoutStore,
     this.git,
     this._fileSearcher,
@@ -165,6 +176,8 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     this.files,
     this.notifications,
     this._neovim,
+    this._telemetryStores,
+    this._telemetryIngest,
   ) {
     _fileEditorFacade = FileEditorFacade(
       FileEditorRegistry({
@@ -283,6 +296,9 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
   final TurnStatusSource _sidecar;
   final TerminalProfileResolver _terminalProfiles;
   final FileReader _fileReader;
+
+  /// Live-reload de abas de arquivo e cadernos (rename atômico, re-arm, poll).
+  final FileChangeWatcher _fileChanges;
   final WorkspaceLayoutStore _layoutStore;
 
   /// Estado git extraído (info/roots/watcher/poll/comandos). O VM delega as
@@ -388,10 +404,13 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
 
   /// Watcher por aba de arquivo: relê o conteúdo ao vivo quando o disco muda
   /// (o agente edita o arquivo). Chaveado pelo id da sessão; cancelado no
-  /// `_disposeSession`. O [_fileWatchDebounce] junta rajadas de eventos do editor.
+  /// `_disposeSession`. O debounce da rajada de eventos é do [_fileChanges].
   final Map<String, StreamSubscription<void>> _fileWatchers =
       <String, StreamSubscription<void>>{};
-  final Map<String, Timer> _fileWatchDebounce = <String, Timer>{};
+
+  /// Leitura mais recente disparada por aba: duas mudanças seguidas geram
+  /// duas leituras concorrentes, e só a última pode ser adotada.
+  final Map<String, int> _fileWatchSeq = <String, int>{};
 
   /// Árvore de splits por projeto (workspace).
   final Map<String, PaneNode> _trees = <String, PaneNode>{};
@@ -711,7 +730,22 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     _taskDiscovery,
     _taskRunner,
     _taskTerminals,
+    TelemetryCliHandler(
+      _telemetryStores,
+      _telemetryIngest,
+      lastEditAt: (id) => _lastEditAt[id],
+      rootsOf: rootsOf,
+    ),
   );
+
+  // Telemetria (plano 66): stores por workspace + ingest, e o último save do
+  // editor por projeto (janela `--since-edit` da CLI).
+  final TelemetryStoreProvider _telemetryStores;
+  final TelemetryIngest _telemetryIngest;
+  final _lastEditAt = <String, DateTime>{};
+
+  /// Último save do editor no projeto (`null` = nenhum nesta sessão).
+  DateTime? lastEditAt(String projectId) => _lastEditAt[projectId];
 
   /// Roots git do projeto. Sempre não-vazio: single-root = `[path]`
   /// (comportamento histórico, N=1); multi-root = as filhas-repo derivadas.
@@ -727,6 +761,12 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
   /// `true` se [projectId] é um workspace de host remoto.
   bool _isRemote(String projectId) =>
       projectById(projectId)?.isRemoteTerminal ?? false;
+
+  /// Arquivo do projeto pode ir para uma janela de documento? A janela lê o
+  /// caminho do disco LOCAL; num workspace remoto ela abriria "arquivo não
+  /// encontrado" (ou, pior, um arquivo local homônimo). Fica de fora até a
+  /// janela saber ler do host.
+  bool canOpenInWindow(String projectId) => !_isRemote(projectId);
 
   /// Estado git de uma **root** específica ([rootPath] absoluto) do workspace
   /// ativo. Para perguntar por outro workspace (badge do rail), use
@@ -1052,6 +1092,67 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     final only = lf?.tabs.length == 1 ? _sessions[lf!.tabs.first] : null;
     if (lf != null && only is EmptyTab) {
       // Pane só com placeholder vazio → substitui.
+      final emptyId = lf.tabs.first;
+      _trees[projectId] = updateLeaf(
+        tree,
+        paneId,
+        (p) => p.copyWith(tabs: [session.id], active: session.id),
+      );
+      _disposeSession(emptyId);
+    } else {
+      _trees[projectId] = updateLeaf(
+        tree,
+        paneId,
+        (p) => p.copyWith(tabs: [...p.tabs, session.id], active: session.id),
+      );
+    }
+    notifyListeners();
+  }
+
+  /// `true` se há aba aberta pro caso [fingerprint] no workspace ativo.
+  bool isTelemetryCaseOpen(String fingerprint) => _sessions.values.any(
+    (s) =>
+        s is TelemetryCaseSession &&
+        s.fingerprint == fingerprint &&
+        s.projectId == _selectedProjectId,
+  );
+
+  /// Abre (ou foca) a aba de detalhe de um caso da Telemetry (plano 66).
+  /// Mesma mecânica do [openTaskOutput]: reusa a aba existente, senão cria na
+  /// pane focada (substituindo um [EmptyTab] solitário).
+  void openTelemetryCase(String fingerprint, String title) {
+    final projectId = _selectedProjectId;
+    final tree = _activeTree;
+    final paneId = projectId == null ? null : _focused[projectId];
+    if (projectId == null || tree == null || paneId == null) return;
+
+    for (final entry in _sessions.entries) {
+      final s = entry.value;
+      if (s is TelemetryCaseSession &&
+          s.fingerprint == fingerprint &&
+          s.projectId == projectId) {
+        for (final leaf in leaves(tree)) {
+          if (leaf.tabs.contains(entry.key)) {
+            selectTab(leaf.id, entry.key);
+            return;
+          }
+        }
+        break;
+      }
+    }
+
+    final session = TelemetryCaseSession(
+      id: _nid('y'),
+      projectId: projectId,
+      fingerprint: fingerprint,
+      title: title,
+      workingDirectory: selectedProject?.path ?? '',
+    );
+    _sessions[session.id] = session;
+
+    final lf = findLeaf(tree, paneId);
+    final only = lf?.tabs.length == 1 ? _sessions[lf!.tabs.first] : null;
+    if (lf != null && only is EmptyTab) {
       final emptyId = lf.tabs.first;
       _trees[projectId] = updateLeaf(
         tree,
@@ -1825,18 +1926,14 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     };
   }
 
-  /// Eventos de mudança numa pasta (caderno). Local = `Directory.watch`;
+  /// Eventos de mudança numa pasta (caderno). Local = [_fileChanges];
   /// remoto = vazio (o painel tem "recarregar"; plano 58 não tem fs.watch).
   @override
   Stream<void> watchFolder(String path) {
     if (_activeRemoteHost() != null || path.isEmpty) {
       return const Stream<void>.empty();
     }
-    try {
-      return Directory(path).watch().map((_) {});
-    } catch (_) {
-      return const Stream<void>.empty();
-    }
+    return _fileChanges.watchFolder(path);
   }
 
   /// Sessão de caderno aberta para [folderPath], se houver.
@@ -2330,49 +2427,23 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
   /// aba normal e revela [line] (base 1) quando informada. Sem-op se o token não
   /// resolve. O FileViewer trata caminho inexistente por conta própria.
   Future<void> openTerminalPath(String token, {String? cwd, int? line}) async {
-    final abs = _resolveTerminalPath(token, cwd);
+    final projectId = _selectedProjectId;
+    // Remoto: o disco é do host, não dá pra conferir daqui qual pasta tem o
+    // arquivo — fica o cwd + caminho.
+    final local = projectId != null && !_isRemote(projectId);
+    final abs = TerminalPathResolver.resolve(
+      token,
+      cwd: cwd,
+      home: userHome(),
+      roots: local
+          ? {?projectRootOf(projectId), ...rootsOf(projectId)}.toList()
+          : const [],
+      exists: local
+          ? (p) => FileSystemEntity.typeSync(p) != FileSystemEntityType.notFound
+          : null,
+    );
     if (abs == null) return;
     await openFile(abs, isPreview: false, revealLine: line);
-  }
-
-  /// Resolve um token de caminho do terminal para absoluto: expande `~`, junta
-  /// com [cwd] se relativo, e normaliza `.`/`..`. `null` se não dá pra resolver.
-  String? _resolveTerminalPath(String token, String? cwd) {
-    var t = token.trim();
-    if (t.isEmpty) return null;
-    if (t == '~' || t.startsWith('~/')) {
-      final home = userHome();
-      if (home == null) return null;
-      t = t == '~' ? home : '$home/${t.substring(2)}';
-    }
-    final isAbsolute =
-        t.startsWith('/') ||
-        (Platform.isWindows && RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(t));
-    if (!isAbsolute) {
-      if (cwd == null || cwd.isEmpty) return null;
-      t = '$cwd/$t';
-    }
-    return _normalizePath(t);
-  }
-
-  /// Colapsa segmentos `.` e `..` de um caminho POSIX-ish (mantém a raiz `/`).
-  String _normalizePath(String path) {
-    final isAbs = path.startsWith('/');
-    final out = <String>[];
-    for (final part in path.split('/')) {
-      if (part.isEmpty || part == '.') continue;
-      if (part == '..') {
-        if (out.isNotEmpty && out.last != '..') {
-          out.removeLast();
-        } else if (!isAbs) {
-          out.add('..');
-        }
-      } else {
-        out.add(part);
-      }
-    }
-    final joined = out.join('/');
-    return isAbs ? '/$joined' : joined;
   }
 
   /// Abre um arquivo do projeto **por caminho relativo** (palette Cmd+P). Aba
@@ -2445,6 +2516,7 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
       final ok = await _fileReader.write(s.path, content, encoding: encoding);
       if (!ok) return false;
     }
+    _lastEditAt[s.projectId] = DateTime.now();
     final fresh = await _readFile(s.path);
     final cur = _sessions[sessionId];
     if (cur is FileViewerSession && fresh is! FileViewUnsupported) {
@@ -2772,7 +2844,7 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
           : '$to${s.path.substring(from.length)}';
       s.retarget(newPath);
       final fresh = await _fileReader.read(newPath);
-      if (fresh is! FileViewUnsupported) s.view = fresh;
+      if (fresh is! FileViewUnsupported) s.adoptDisk(fresh);
       _fileWatchers.remove(s.id)?.cancel();
       _watchFileViewer(s);
     }
@@ -2862,6 +2934,7 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     // Await: no Windows o `hookEnv` depende da porta ligada antes de spawnar abas.
     // O mesmo socket atende a CLI interna `cockpit` (`_onCockpitCommand`).
     await _statusServer.start(_onClaudeStatus, onCommand: _cli.handle);
+    _telemetryNoticeSub = _telemetryIngest.notices.listen(_onTelemetryNotice);
     // Turn-status REMOTO (plano 60, Wave G): o hook roda no host, o cockpit-
     // server o reenvia pelo protocolo, e aqui cai no MESMO caminho do local
     // (roteado por paneId → spinner/chime). Sem isso, terminal remoto não tem
@@ -4809,6 +4882,84 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     );
   }
 
+  /// `.ckp` que a **janela de documento** mandou aplicar (comando
+  /// `apply-layout` no socket). A página consome no próximo notify e conduz o
+  /// resto na UI: resolver destino, perguntar se for ambíguo, confirmar o
+  /// fechamento das abas. O VM não abre diálogo — só guarda o pedido.
+  String? _pendingLayoutApply;
+
+  /// Registra o pedido e acorda a UI. Traz a janela principal para a frente:
+  /// o clique foi noutra janela, e o que vem a seguir é um diálogo.
+  void requestLayoutApply(String ckpPath) {
+    _pendingLayoutApply = ckpPath;
+    if (!isMobilePlatform) {
+      unawaited(windowManager.show());
+      unawaited(windowManager.focus());
+    }
+    notifyListeners();
+  }
+
+  /// Devolve (uma vez) o pedido pendente.
+  String? takePendingLayoutApply() {
+    final path = _pendingLayoutApply;
+    _pendingLayoutApply = null;
+    return path;
+  }
+
+  /// Workspaces abertos que contêm o `.ckp` — os destinos possíveis do botão
+  /// Apply do viewer de layout. Vazio = o arquivo está fora de qualquer
+  /// workspace (Downloads), e o destino vira um workspace novo na pasta dele.
+  /// Ver [layoutDestinationsFor] para a regra e os casos ambíguos.
+  List<Project> layoutDestinations(String ckpPath) =>
+      layoutDestinationsFor(ckpPath, _projectList);
+
+  /// Impacto de substituir o layout de um workspace **qualquer** (não só o
+  /// selecionado): o viewer precisa dizer no diálogo quantas abas fecham no
+  /// destino escolhido, que pode nem estar na frente.
+  ({int tabs, bool running}) layoutReplaceImpactOf(String projectId) {
+    final tabs = allSessions
+        .where((s) => s.projectId == projectId && !_isEmptyPlaceholder(s))
+        .toList();
+    final running = tabs.any(
+      (s) =>
+          s.isWorking ||
+          (s is TerminalSession && s.activeHarness != null) ||
+          (s is TaskOutputSession && _taskRunner.runOf(s.taskId).isActive),
+    );
+    return (tabs: tabs.length, running: running);
+  }
+
+  /// Aplica o `.ckp` num workspace **específico** (o destino do Apply).
+  ///
+  /// Seleciona o destino antes de aplicar, porque [applyLayoutFile] age no
+  /// workspace selecionado. A ordem importa: **ativa primeiro** (garante a
+  /// árvore de panes carregada, inclusive de um workspace que ainda não foi
+  /// aberto nesta sessão) e só então seleciona — assim o `_activateProject`
+  /// disparado lá dentro vira no-op em vez de correr em paralelo com este.
+  /// Trocar de realm, quando o destino é de outro, é responsabilidade do
+  /// [selectProject].
+  Future<Result<LayoutApplyReport, String>> applyLayoutFileTo(
+    String projectId,
+    String ckpPath,
+  ) async {
+    if (_selectedProjectId != projectId) {
+      await _activateProject(projectId);
+      selectProject(projectId);
+    }
+    return applyLayoutFile(ckpPath);
+  }
+
+  /// Abre um workspace novo na pasta do `.ckp` e aplica o layout nele. É o
+  /// caso do arquivo solto (fora de qualquer workspace): a pasta do arquivo é
+  /// para onde os `cwd` do layout apontam de qualquer forma, e o workspace
+  /// nasce vazio — não há aba de ninguém para fechar.
+  Future<Result<LayoutApplyReport, String>> openWorkspaceAndApplyLayout(
+    String ckpPath,
+  ) async {
+    final project = await addProject(_dirname(ckpPath));
+    return applyLayoutFileTo(project.id, ckpPath);
+  }
+
   /// Impacto de substituir o layout do workspace selecionado: quantas abas
   /// seriam fechadas e se alguma tem trabalho em andamento (harness/agente
   /// no meio de um turno, task com processo vivo). A UI usa pra decidir se
@@ -5706,6 +5857,94 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     if (s.claudeSessionId != hadSid && s.claudeSessionId != null) {
       _scheduleSave(s.projectId);
     }
+    // Turno acabou: hora de entregar o que a Telemetry enfileirou pra este
+    // agente (plano 66, passo 7). Nunca no meio do turno.
+    if (!s.isWorking) _deliverTelemetryPush(u.paneId);
+  }
+
+  // ---- Telemetry: push turn-aware (plano 66, passo 7) -----------------------
+
+  StreamSubscription<TelemetryErrorNotice>? _telemetryNoticeSub;
+
+  /// Casos pendentes por pane: fingerprint → linha de resumo.
+  final _telemetryPending = <String, Map<String, String>>{};
+  final _telemetryLastPush = <String, DateTime>{};
+  final _telemetryPushTimers = <String, Timer>{};
+  static const _telemetryPushThrottle = Duration(seconds: 30);
+
+  /// Ligado pela página a partir das Settings (`telemetryPush`).
+  bool Function() telemetryPushEnabled = () => true;
+
+  Future<void> _onTelemetryNotice(TelemetryErrorNotice n) async {
+    if (!telemetryPushEnabled()) return;
+    // Só o que é novo/regressão: a triagem e o histórico decidem.
+    final store = await _telemetryStores.forWorkspace(n.workspaceId);
+    final fresh = await store.cases(
+      TelemetryQuery(runId: n.runId, onlyNew: true, limit: 200),
+    );
+    final hits = fresh.where((c) => n.fingerprints.contains(c.fingerprint));
+    if (hits.isEmpty) return;
+
+    // Wrapper: só o pane dele. Task (sem pane): os agentes do workspace.
+    final targets = <String>{};
+    if (n.paneId != null && _sessions[n.paneId] is TerminalSession) {
+      targets.add(n.paneId!);
+    } else {
+      final ws = _workspaceIdOfTelemetry(n.workspaceId);
+      for (final s in _sessions.values) {
+        if (s is TerminalSession &&
+            s.projectId == ws &&
+            s.claudeSessionId != null) {
+          targets.add(s.id);
+        }
+      }
+    }
+    if (targets.isEmpty) return;
+    for (final pane in targets) {
+      final bucket = _telemetryPending.putIfAbsent(pane, () => {});
+      for (final c in hits) {
+        bucket[c.fingerprint] =
+            '${c.shortId} ${c.type} ×${c.count}'
+            '${c.location == null ? '' : ' ${c.location}'}'
+            '${c.isRegression ? ' (regression)' : ''}'
+            ' [${n.project} ${n.runId}]';
+      }
+      _deliverTelemetryPush(pane);
+    }
+  }
+
+  /// O id de workspace da telemetria é o id do projeto (UUID). Mantido como
+  /// função pra o dia em que fork/worktree tiver base própria.
+  String _workspaceIdOfTelemetry(String workspaceId) => workspaceId;
+
+  void _deliverTelemetryPush(String paneId) {
+    final pending = _telemetryPending[paneId];
+    if (pending == null || pending.isEmpty) return;
+    final s = _sessions[paneId];
+    if (s is! TerminalSession) {
+      _telemetryPending.remove(paneId);
+      return;
+    }
+    if (s.isWorking) return; // o fim do turno chama de novo
+    final last = _telemetryLastPush[paneId];
+    final since = last == null ? null : DateTime.now().difference(last);
+    if (since != null && since < _telemetryPushThrottle) {
+      _telemetryPushTimers[paneId]?.cancel();
+      _telemetryPushTimers[paneId] = Timer(
+        _telemetryPushThrottle - since,
+        () => _deliverTelemetryPush(paneId),
+      );
+      return;
+    }
+    final lines = pending.values.toList();
+    _telemetryPending.remove(paneId);
+    _telemetryLastPush[paneId] = DateTime.now();
+    final head = lines.length == 1
+        ? 'telemetry: 1 new case'
+        : 'telemetry: ${lines.length} new cases';
+    final shown = lines.take(5).join('; ');
+    final more = lines.length > 5 ? '; +${lines.length - 5} more' : '';
+    s.insertText('$head: $shown$more · cockpit telemetry errors --new\r');
   }
 
   /// Env de PATH escopado: prepend o diretório da CLI (onde o binário `cockpit`
@@ -5719,6 +5958,71 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
   bool _isRemoteWorkspace(String projectId) {
     final project = _projectById(projectId);
     return project != null && project.isRemoteTerminal;
+  }
+
+  /// Ambiente que um processo precisa para falar com o app pela CLI interna:
+  /// roteamento (`COCKPIT_TAB_ID`, quando há aba emissora), transporte do
+  /// socket e o PATH com o binário `cockpit`. É o mesmo que as abas de
+  /// terminal locais recebem; usado pelo `exec` e pela ponte dos `.panel`.
+  Map<String, String> cliEnvironment({String? tabId}) => <String, String>{
+    if (tabId != null && tabId.isNotEmpty) ...{
+      'COCKPIT_TAB_ID': tabId,
+      'COCKPIT_PANE_ID': tabId,
+    },
+    ..._statusServer.hookEnv,
+    ..._cliPathEnv(),
+  };
+
+  /// Ponte dos `.panel` (plano 67): roda `cockpit <line>` num shell, com o
+  /// mesmo env das abas, e devolve o resultado como a página espera
+  /// (`{ok, code, stdout, stderr, json}`). Spawnar o próprio binário, em vez de
+  /// reimplementar o parser da CLI aqui, garante paridade: o que funciona no
+  /// terminal funciona no botão. `json` é o stdout parseado quando é JSON
+  /// (`--json`, `db query`...), senão `null`.
+  Future<Map<String, Object?>> runPanelCommand(
+    String line, {
+    required String sessionId,
+    required String cwd,
+  }) async {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) {
+      return const <String, Object?>{
+        'ok': false,
+        'code': 2,
+        'stdout': '',
+        'stderr': 'cockpit: empty command',
+        'error': 'cockpit: empty command',
+        'json': null,
+      };
+    }
+    final result = await runShellCommand(
+      'cockpit $trimmed',
+      cwd: cwd,
+      environment: cliEnvironment(tabId: sessionId),
+    );
+    Object? parsed;
+    final out = result.stdout.trim();
+    if (out.startsWith('{') || out.startsWith('[')) {
+      try {
+        parsed = jsonDecode(out);
+      } on FormatException {
+        parsed = null;
+      }
+    }
+    final ok = result.code == 0;
+    return <String, Object?>{
+      'ok': ok,
+      'code': result.code,
+      'stdout': result.stdout,
+      'stderr': result.stderr,
+      'timedOut': result.timedOut,
+      'json': parsed,
+      'error': ok
+          ? null
+          : (result.stderr.trim().isNotEmpty
+                ? result.stderr.trim()
+                : 'exit code ${result.code}'),
+    };
   }
 
   Map<String, String> _cliPathEnv() {
@@ -5787,7 +6091,7 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
   /// devolve, sem destruir.
   PaneItem? _detachSession(String id) {
     _fileWatchers.remove(id)?.cancel();
-    _fileWatchDebounce.remove(id)?.cancel();
+    _fileWatchSeq.remove(id);
     final s = _sessions.remove(id);
     // Aba fechada explicitamente → descarta o scrollback persistido (só abas de
     // terminal têm). O app-quit NÃO passa por aqui (chama `s.dispose()` direto em
@@ -5799,41 +6103,37 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
   }
 
   /// Observa o arquivo de uma aba de viewer e relê o conteúdo ao vivo quando ele
-  /// muda no disco (decisão de UX — antes a aba congelava até fechar/reabrir). O
-  /// debounce junta a rajada de eventos que um editor dispara num save; o re-read
-  /// que volta `FileViewUnsupported` (sumiu/binário transitório) é ignorado pra
-  /// não piscar. Tudo guardado por id de sessão e cancelado no `_disposeSession`.
+  /// muda no disco (decisão de UX — antes a aba congelava até fechar/reabrir).
+  /// Rename atômico, rajada de eventos e stream do SO que morre são problema do
+  /// [_fileChanges]; aqui só se relê. O re-read que volta `FileViewUnsupported`
+  /// (sumiu/binário transitório) é ignorado pra não piscar. Tudo guardado por
+  /// id de sessão e cancelado no `_disposeSession`.
   void _watchFileViewer(FileViewerSession viewer) {
+    final id = viewer.id;
+    _fileWatchers.remove(id)?.cancel();
     // A/V: live-reload desligado (plano 46). Recarregar recriaria o player no
     // meio da reprodução; mídia raramente é reescrita em disco.
     if (viewer.view is FileViewAudio || viewer.view is FileViewVideo) return;
-    final id = viewer.id;
-    _fileWatchers.remove(id)?.cancel();
-    _fileWatchers[id] = _fileReader.watch(viewer.path).listen(
-      (_) {
-        _fileWatchDebounce[id]?.cancel();
-        _fileWatchDebounce[id] = Timer(
-          const Duration(milliseconds: 120),
-          () async {
-            _fileWatchDebounce.remove(id);
-            if (_sessions[id] is! FileViewerSession) return; // aba fechou
-            final fresh = await _fileReader.read(viewer.path);
-            if (fresh is FileViewUnsupported) return;
-            final s = _sessions[id];
-            if (s is! FileViewerSession) return; // fechou durante o read
-            s.view = fresh;
-            _applyKanbanBoardTitle(s);
-            // A ABA é quem escuta a sessão (o viewer e o quadro se reconstroem
-            // pelo `_onSession` dela). Sem este notify, uma edição externa —
-            // um agente escrevendo o markdown, que é o caso comum — só
-            // aparecia depois de apertar "atualizar".
-            s.notifyListeners();
-            notifyListeners();
-          },
-        );
-      },
-      onError: (_) {}, // watch falhou (sandbox, rename) → sem live-reload
-    );
+    // Remoto: o caminho é do host, não deste disco (o `cockpit-server` não tem
+    // fs.watch). Vigiar aqui leria um arquivo local homônimo, se existisse.
+    if (_isRemote(viewer.projectId)) return;
+    _fileWatchers[id] = _fileChanges.watchFile(viewer.path).listen((_) async {
+      if (_sessions[id] is! FileViewerSession) return; // aba fechou
+      final seq = (_fileWatchSeq[id] ?? 0) + 1;
+      _fileWatchSeq[id] = seq;
+      final fresh = await _fileReader.read(viewer.path);
+      if (_fileWatchSeq[id] != seq) return; // leitura mais nova a caminho
+      if (fresh is FileViewUnsupported) return;
+      final s = _sessions[id];
+      if (s is! FileViewerSession) return; // fechou durante o read
+      // A ABA é quem escuta a sessão (o viewer e o quadro se reconstroem pelo
+      // `_onSession` dela): `adoptDisk` notifica. Sem isso, uma edição
+      // externa — um agente escrevendo o markdown, que é o caso comum — só
+      // aparecia depois de apertar "atualizar".
+      s.adoptDisk(fresh);
+      _applyKanbanBoardTitle(s);
+      notifyListeners();
+    });
   }
 
   // ---- persistência do layout ----------------------------------------------
@@ -6627,6 +6927,10 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
     unawaited(_remoteTurnSub?.cancel());
     unawaited(_remoteCliSub?.cancel());
     unawaited(_sidecarTurnSub?.cancel());
+    unawaited(_telemetryNoticeSub?.cancel());
+    for (final t in _telemetryPushTimers.values) {
+      t.cancel();
+    }
     // O GitController é dono dos próprios timers/watchers; o módulo o
     // descarta junto com a rota. Aqui só desligamos o repasse de notify.
     git.removeListener(_onGitNotify);
@@ -6642,10 +6946,6 @@ class CockpitViewModel extends ChangeNotifier implements DocumentHost {
       w.cancel();
     }
     _fileWatchers.clear();
-    for (final t in _fileWatchDebounce.values) {
-      t.cancel();
-    }
-    _fileWatchDebounce.clear();
     // Grava o output pendente das tasks antes de sair (o debounce de 1s do
     // `TaskTerminalStore` pode não ter disparado) → o restore reabre a aba.
     unawaited(_taskTerminals.flushAll());
