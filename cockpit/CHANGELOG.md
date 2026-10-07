@@ -24,9 +24,133 @@ As versões seguem o `version:` do `pubspec.yaml` (SSOT). O campo `notes` do
     linhas não-vazias — o começo da seção deve fazer sentido sozinho.
 -->
 
-## [2.1.2] - 2026-09-26
+## [2.1.7] - 2026-09-28
 
-Every 2.x release is a beta of 2.0.0 until the consolidated notes ship.
+**`.panel` files now open as a live page in their own document window.**
+Before, opening a panel in a separate window (from the Finder, Explorer, or
+"Open in new window") showed the HTML source instead of the page.
+
+### Fixed
+
+- **Panel in a document window**: the standalone window renders the `.panel`
+  with the same bridge as the tab. `exec`, `db`, `send` and the other
+  `cockpit` verbs work from there; verbs that depend on a tab use the
+  workspace selected in the main window.
+
+## [2.1.6] - 2026-09-27
+
+**Fixes Postgres and MySQL connections, which stopped working in 2.1.5 on
+macOS.** Also fixes the mouse hover offset over `.panel` pages and previews,
+the tab icon of `.panel` and `.ckp` files, and a reconnection storm against a
+remote host that is offline.
+
+### Fixed
+
+- **Postgres and MySQL**: every SQL query in 2.1.5 failed with "no response
+  from app" on macOS. The database drivers shipped with a binary the system
+  refused to load. Updated to `anaki_postgres` 0.1.9 and `anaki_mysql` 0.1.10,
+  which ship rebuilt libraries. SQLite, MSSQL, Redis and Mongo were not
+  affected.
+- **Webview hover**: moving the mouse over a `.panel`, a markdown preview or
+  the browser highlighted the tab or file-tree row a few pixels above the
+  cursor. The hover relay no longer depends on page coordinates.
+- **Tab icon**: `.panel` and `.ckp` tabs with a `title:` in their front matter
+  showed the generic file icon. The icon now comes from the file name.
+- **Remote host offline**: an unreachable host was reported as "unknown
+  operating system" and the worktree refresh kept opening new SSH attempts
+  every couple of seconds, ignoring the reconnection backoff. The error now
+  says the host is unreachable, and refreshes wait for the host to come back.
+- **Remote server install on zsh hosts**: the install script aborted with
+  "no matches found" when there was no leftover staging folder to clean.
+- **CLI socket**: the "malformed line" warning now includes the offending
+  line, so it can be diagnosed.
+- **`cockpit` CLI**: clippy and Windows test fixes; no behaviour change.
+
+### Added
+
+- `github-actions.panel` example at the repo root: last 5 workflow runs, jobs
+  and steps of each, live refresh every 10 s while something is running.
+
+## [2.1.5] - 2026-09-27
+
+Same content as 2.1.4, whose Windows build failed on a flaky release gate
+(the smoke test read the server's endpoint file after the server had already
+exited). No app changes.
+
+## [2.1.4] - 2026-09-27
+
+**`.panel` files now ship with bundled libraries: a themed stylesheet,
+petite-vue, Chart.js, marked and Tailwind, served offline at
+`/__cockpit__/<name>`.** Panels also get hash routing for multi-page layouts
+and more theme variables, so an agent can build a real dashboard in one file
+without touching the network.
+
+### Added
+
+- **Bundled panel libraries**: `<link href="/__cockpit__/cockpit.css">` gives
+  tables, buttons, cards, badges and grid utilities that follow the app theme;
+  `/__cockpit__/petite-vue.js` (reactive state, Vue syntax),
+  `/__cockpit__/chart.js`, `/__cockpit__/marked.js` and
+  `/__cockpit__/tailwind.js` are available the same way. Same URL on macOS,
+  Windows and Linux, same version in every workspace, nothing copied into the
+  repo.
+- **Panel routing**: `cockpit.route` (`path`, `params`, `go`, `match`) and the
+  `route` event let one `.panel` file show several pages via `#/...` links.
+- **More theme variables** for panels: `--ckp-bg-raised`,
+  `--ckp-text-secondary`, `--ckp-border-strong`, `--ckp-accent-soft`,
+  `--ckp-accent-text`, `--ckp-ok`, `--ckp-warn`, `--ckp-error`.
+- The `cockpit-cli` skill documents the bundled libraries with a minimal
+  dashboard to copy.
+
+## [2.1.3] - 2026-09-27
+
+**Drag files from the Finder or Explorer into the file tree, open a folder
+straight in Claude Code or Codex, and generate tasks from a Docker Compose
+file.** This build also fixes a rare bug where a terminal showed up in the
+wrong workspace, and stops folders from turning red when a file was deleted
+next to new ones.
+
+### Added
+
+- **Native drop in the file tree**: drop files or folders from the OS onto a
+  folder (highlighted) or onto empty space (workspace root). Items from
+  outside are copied, items already in the workspace are moved; several items
+  ask for confirmation. Remote workspaces are not supported yet.
+- **Open in agent**: the folder menu lists every installed CLI agent (Claude
+  Code, Codex, Pi, OpenCode, Cursor, Copilot...) and opens a terminal in that
+  folder already running it. "Create terminal" became "Open terminal".
+- **Docker Compose and Podman Compose tasks**: open a compose YAML and use
+  "Generate tasks from Compose" to get one task per service, with `up`,
+  `build`, `recreate` and `recreate-deps` profiles.
+- **Developer mode** (Settings, General, off by default): records Cockpit's
+  own errors and warnings in a separate Telemetry store (the "Cockpit" chip,
+  `cockpit telemetry ... --app`) and turns on performance metrics
+  (`cockpit telemetry perf`).
+- `.panel` files highlight as HTML when opened as source, and "Open as HTML"
+  in the menus.
+
+### Fixed
+
+- A terminal could show up inside another workspace: layouts restored later
+  reused a tab id that a live workspace already owned. Ids are now remapped
+  on restore.
+- Folders no longer turn red because a file was deleted inside them; a
+  deletion counts as a plain change for the folder color.
+- "Open terminal" from a folder opened in the wrong path (doubled prefix).
+- Six Telemetry cases of setState during build and use after dispose in the
+  Telemetry pane and the panel tab.
+- Web views (panel, HTML and markdown preview, browser): no more rubber-band
+  at the scroll edges, no black flash before the first paint, and hover
+  states no longer get stuck on Flutter widgets when the mouse enters the
+  web view.
+
+### Changed
+
+- The "notify agents about new errors" push into the agent's terminal was
+  removed; agents query `cockpit telemetry` when they need it.
+- Keep awake button now sits before Settings in the rail footer.
+
+## [2.1.2] - 2026-09-26
 
 **Panels: a live HTML page whose buttons run things on your machine.** A new
 `.panel` file type opens as a web view with `window.cockpit` injected: any
@@ -51,8 +175,6 @@ triggers a task, and open it from the Gallery.
   format and the bridge.
 
 ## [2.1.1] - 2026-09-25
-
-Every 2.x release is a beta of 2.0.0 until the consolidated notes ship.
 
 **Windows builds are now code signed.** The installer and the executables
 inside it (app, CLI, hook helper and the bundled cockpit-server) are signed

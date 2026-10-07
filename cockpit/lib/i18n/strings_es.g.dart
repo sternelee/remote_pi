@@ -406,6 +406,12 @@ class _Translations$cockpit$tasksPanel$es extends Translations$cockpit$tasksPane
 	@override String get sectionTasks => 'TAREAS';
 	@override String get noTasks => 'No se detectaron tareas en este proyecto.';
 	@override String get createTasksJson => 'Crear tasks.json';
+	@override String get generateComposeTasks => 'Generar tareas de Compose';
+	@override String get selectComposeEngine => 'Elige un motor de Compose';
+	@override String get noComposeEngine => 'No se encontró Docker Compose ni Podman Compose.';
+	@override String get invalidComposeFile => 'El archivo activo no es un Compose válido con servicios.';
+	@override String get invalidTasksJson => 'tasks.json no es válido. No se guardaron cambios.';
+	@override String composeConflicts({required Object labels}) => 'Se conservaron tareas que no son Compose con etiquetas en conflicto: ${labels}';
 }
 
 // Path: cockpit.cockpitPage
@@ -563,7 +569,7 @@ class _Translations$cockpit$fileTreePanel$es extends Translations$cockpit$fileTr
 	@override String get openLayout => 'Abrir layout';
 	@override String get openAsMarkdown => 'Abrir como markdown';
 	@override String get showGitDiff => 'Mostrar diff de git';
-	@override String get createTerminal => 'Crear terminal';
+	@override String get createTerminal => 'Abrir en terminal';
 	@override String get rename => 'Renombrar';
 	@override String get copy => 'Copiar';
 	@override String get cut => 'Cortar';
@@ -610,6 +616,11 @@ class _Translations$cockpit$fileTreePanel$es extends Translations$cockpit$fileTr
 	@override String get galleryTooltip => 'Galería';
 	@override String get sectionGallery => 'GALERÍA';
 	@override String get openAsHtml => 'Abrir como HTML';
+	@override String get importQuestionTitle => '¿Copiar aquí?';
+	@override String importMessage({required Object count, required Object dest}) => '¿Copiar ${count} elementos en “${dest}”?';
+	@override String get importAction => 'Copiar';
+	@override String get couldNotImportTitle => 'No se pudo copiar';
+	@override String openInAgent({required Object harness}) => 'Abrir en ${harness}';
 }
 
 // Path: cockpit.fileViewer
@@ -1266,6 +1277,8 @@ class _Translations$cockpit$telemetry$es extends Translations$cockpit$telemetry$
 	@override String get byHuman => 'por ti';
 	@override String get byAgent => 'por el agente';
 	@override String caseTabTitle({required Object type, required Object file}) => '${type} · ${file}';
+	@override String get srcApp => 'App';
+	@override String get chipApp => 'Cockpit';
 }
 
 // Path: cockpit.panelView
@@ -1396,6 +1409,7 @@ class _Translations$fileOperation$error$es extends Translations$fileOperation$er
 	@override String osFailure({required Object detail}) => '${detail}';
 	@override String get nameHasSlash => 'El nombre no puede contener “/”.';
 	@override String get invalidName => 'Nombre inválido.';
+	@override String get remoteDropUnsupported => 'Soltar archivos en un workspace remoto todavía no está soportado.';
 }
 
 // Path: theme.error
@@ -1636,8 +1650,8 @@ class _Translations$settings$page$general$es extends Translations$settings$page$
 	@override String get checkUpdatesTitle => 'Buscar actualizaciones';
 	@override String get checkUpdatesDesc => 'Con qué frecuencia Cockpit debe buscar nuevas versiones.';
 	@override late final _Translations$settings$page$general$updateFrequency$es updateFrequency = _Translations$settings$page$general$updateFrequency$es._(_root);
-	@override String get telemetryPushTitle => 'Avisar a los agentes de errores nuevos';
-	@override String get telemetryPushDesc => 'Cuando una task o un comando observado produce un error que el agente de esa pestaña aún no vio, le envía una línea de resumen en cuanto termina su turno.';
+	@override String get developerModeTitle => 'Modo desarrollador';
+	@override String get developerModeDesc => 'Registra los errores y avisos del propio Cockpit en una base aparte de la Telemetría (chip “Cockpit”) y activa las métricas de rendimiento. Solo sirve a quien mantiene la app.';
 }
 
 // Path: settings.page.diagnostics
@@ -2020,6 +2034,12 @@ extension on TranslationsEs {
 			'cockpit.tasksPanel.sectionTasks' => 'TAREAS',
 			'cockpit.tasksPanel.noTasks' => 'No se detectaron tareas en este proyecto.',
 			'cockpit.tasksPanel.createTasksJson' => 'Crear tasks.json',
+			'cockpit.tasksPanel.generateComposeTasks' => 'Generar tareas de Compose',
+			'cockpit.tasksPanel.selectComposeEngine' => 'Elige un motor de Compose',
+			'cockpit.tasksPanel.noComposeEngine' => 'No se encontró Docker Compose ni Podman Compose.',
+			'cockpit.tasksPanel.invalidComposeFile' => 'El archivo activo no es un Compose válido con servicios.',
+			'cockpit.tasksPanel.invalidTasksJson' => 'tasks.json no es válido. No se guardaron cambios.',
+			'cockpit.tasksPanel.composeConflicts' => ({required Object labels}) => 'Se conservaron tareas que no son Compose con etiquetas en conflicto: ${labels}',
 			'cockpit.cockpitPage.chooseProjectFolderDialogTitle' => 'Elige la carpeta del proyecto',
 			'cockpit.cockpitPage.chooseWorkspaceFolderDialogTitle' => 'Elige la carpeta del workspace',
 			'cockpit.cockpitPage.workspaceRenamedTitle' => 'Workspace renombrado',
@@ -2138,7 +2158,7 @@ extension on TranslationsEs {
 			'cockpit.fileTreePanel.openLayout' => 'Abrir layout',
 			'cockpit.fileTreePanel.openAsMarkdown' => 'Abrir como markdown',
 			'cockpit.fileTreePanel.showGitDiff' => 'Mostrar diff de git',
-			'cockpit.fileTreePanel.createTerminal' => 'Crear terminal',
+			'cockpit.fileTreePanel.createTerminal' => 'Abrir en terminal',
 			'cockpit.fileTreePanel.rename' => 'Renombrar',
 			'cockpit.fileTreePanel.copy' => 'Copiar',
 			'cockpit.fileTreePanel.cut' => 'Cortar',
@@ -2185,6 +2205,11 @@ extension on TranslationsEs {
 			'cockpit.fileTreePanel.galleryTooltip' => 'Galería',
 			'cockpit.fileTreePanel.sectionGallery' => 'GALERÍA',
 			'cockpit.fileTreePanel.openAsHtml' => 'Abrir como HTML',
+			'cockpit.fileTreePanel.importQuestionTitle' => '¿Copiar aquí?',
+			'cockpit.fileTreePanel.importMessage' => ({required Object count, required Object dest}) => '¿Copiar ${count} elementos en “${dest}”?',
+			'cockpit.fileTreePanel.importAction' => 'Copiar',
+			'cockpit.fileTreePanel.couldNotImportTitle' => 'No se pudo copiar',
+			'cockpit.fileTreePanel.openInAgent' => ({required Object harness}) => 'Abrir en ${harness}',
 			'cockpit.fileViewer.cantOpen' => 'No se puede abrir este archivo.',
 			'cockpit.fileViewer.couldNotLoadImage' => 'No se pudo cargar la imagen.',
 			'cockpit.fileViewer.preview' => 'Vista previa',
@@ -2380,6 +2405,8 @@ extension on TranslationsEs {
 			'cockpit.sshPrompts.trust' => 'Confiar',
 			'cockpit.sshPrompts.sshKeyPassphraseTitle' => 'Frase de contraseña de la clave SSH',
 			'cockpit.sshPrompts.unlockMessage' => ({required Object keyPath, required Object connectionName}) => 'Desbloquea ${keyPath} para conectar "${connectionName}".',
+			_ => null,
+		} ?? switch (path) {
 			'cockpit.sshPrompts.keptInMemoryHint' => 'Se mantiene en memoria hasta que Cockpit se cierre. Para que los agentes usen esta conexión, activa "Guardar frase de contraseña" en la conexión.',
 			'cockpit.sshPrompts.unlock' => 'Desbloquear',
 			'cockpit.projectsRail.workspaces' => 'Workspaces',
@@ -2391,8 +2418,6 @@ extension on TranslationsEs {
 			'cockpit.projectsRail.settings' => 'Configuración',
 			'cockpit.projectsRail.mergeToParent' => 'Fusionar en el padre',
 			'cockpit.projectsRail.updateFromParent' => 'Actualizar desde el padre',
-			_ => null,
-		} ?? switch (path) {
 			'cockpit.projectsRail.forkWorktree' => 'Crear worktree derivada',
 			'cockpit.projectsRail.copyBranch' => 'Copiar branch',
 			'cockpit.projectsRail.remove' => 'Quitar',
@@ -2633,6 +2658,8 @@ extension on TranslationsEs {
 			'cockpit.telemetry.byHuman' => 'por ti',
 			'cockpit.telemetry.byAgent' => 'por el agente',
 			'cockpit.telemetry.caseTabTitle' => ({required Object type, required Object file}) => '${type} · ${file}',
+			'cockpit.telemetry.srcApp' => 'App',
+			'cockpit.telemetry.chipApp' => 'Cockpit',
 			'cockpit.panelView.unavailable' => 'Los paneles necesitan la web view integrada, que todavía no existe en Linux.',
 			'cockpit.panelView.openInBrowser' => 'Abrir en el navegador',
 			'cockpit.panelView.openAsHtml' => 'Abrir como HTML',
@@ -2669,8 +2696,8 @@ extension on TranslationsEs {
 			'settings.page.general.updateFrequency.weekly' => 'Semanalmente',
 			'settings.page.general.updateFrequency.monthly' => 'Mensualmente',
 			'settings.page.general.updateFrequency.never' => 'Nunca',
-			'settings.page.general.telemetryPushTitle' => 'Avisar a los agentes de errores nuevos',
-			'settings.page.general.telemetryPushDesc' => 'Cuando una task o un comando observado produce un error que el agente de esa pestaña aún no vio, le envía una línea de resumen en cuanto termina su turno.',
+			'settings.page.general.developerModeTitle' => 'Modo desarrollador',
+			'settings.page.general.developerModeDesc' => 'Registra los errores y avisos del propio Cockpit en una base aparte de la Telemetría (chip “Cockpit”) y activa las métricas de rendimiento. Solo sirve a quien mantiene la app.',
 			'settings.page.diagnostics.sectionTitle' => 'Diagnóstico',
 			'settings.page.diagnostics.logFileTitle' => 'Archivo de registro',
 			'settings.page.diagnostics.logFileDesc' => ({required Object days, required Object path}) => 'Los errores y eventos de inicio se registran aquí, y se conservan durante ${days} días.\n${path}',
@@ -2874,6 +2901,7 @@ extension on TranslationsEs {
 			'fileOperation.error.osFailure' => ({required Object detail}) => '${detail}',
 			'fileOperation.error.nameHasSlash' => 'El nombre no puede contener “/”.',
 			'fileOperation.error.invalidName' => 'Nombre inválido.',
+			'fileOperation.error.remoteDropUnsupported' => 'Soltar archivos en un workspace remoto todavía no está soportado.',
 			'theme.error.io' => 'No se pudo leer o escribir el archivo del tema.',
 			'theme.error.ioDetail' => ({required Object detail}) => 'No se pudo leer o escribir el archivo del tema: ${detail}',
 			'theme.error.malformedJson' => ({required Object detail}) => 'Este archivo no es JSON válido: ${detail}',
