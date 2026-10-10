@@ -1,9 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { remoteRoot } from "./runtime.js";
 
-const CONFIG_DIR = path.join(os.homedir(), ".pi", "remote");
-const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+/**
+ * `<state root>/config.json` — `~/.pi/remote/config.json` under pi,
+ * `~/.omp/remote/config.json` under omp. Resolved per call so the host
+ * decision and `REMOTE_PI_HOME` are honored; never frozen at import.
+ */
+function configFile(): string {
+  return path.join(remoteRoot(), "config.json");
+}
 
 /**
  * Default community relay. Stored in canonical http(s):// form — conversion
@@ -18,7 +24,7 @@ export type RemotePiConfig = { relay?: string };
 
 export function loadConfig(): RemotePiConfig {
   try {
-    const raw = fs.readFileSync(CONFIG_FILE, "utf8");
+    const raw = fs.readFileSync(configFile(), "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object") return {};
     return parsed as RemotePiConfig;
@@ -28,10 +34,10 @@ export function loadConfig(): RemotePiConfig {
 }
 
 export function saveConfig(patch: Partial<RemotePiConfig>): void {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.mkdirSync(remoteRoot(), { recursive: true });
   const current = loadConfig();
   const next = { ...current, ...patch };
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2));
+  fs.writeFileSync(configFile(), JSON.stringify(next, null, 2));
 }
 
 export type RelayResolution = { url: string; source: "env" | "config" | "default" };

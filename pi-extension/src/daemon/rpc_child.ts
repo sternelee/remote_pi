@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DaemonState } from "./control_protocol.js";
 import { defaultAgentName, loadLocalConfig, type LocalConfig } from "../session/local_config.js";
+import { getHost, hostBinName, type HostId } from "../runtime.js";
 
 /**
  * Wrapper around a `pi --mode rpc -e <extension>` child process for the
@@ -207,27 +208,46 @@ export function parseUiRequestLine(
  * daemon's name is set at registration (`remote-pi create <cwd> --name "…"`).
  * Omitted when no name resolves, so the arg list stays minimal.
  *
- * `--approve` is mandatory for a daemon (pi ≥0.79 project trust): RPC mode is
- * non-interactive, so without an override Pi resolves an untrusted project
- * folder (any folder with `.pi/` or CLAUDE.md/AGENTS.md) to NOT trusted and
- * silently skips its `.pi/settings.json` (model/provider/keys), instructions,
- * resources and project extensions — the daemon then comes up with no model
- * and fails on the first turn. The operator already authorized this folder by
- * registering/launching a daemon in it, so `--approve` (trust-for-this-run) is
- * the correct non-interactive stance. (Does NOT affect the separate "extension
- * loaded twice" conflict, which comes from the extension being BOTH installed
- * in ~/.pi/agent/extensions or cwd/.pi/extensions AND passed via `-e`.)
+ * `--approve` is mandatory for a daemon under **pi** (pi ≥0.79 project trust):
+ * RPC mode is non-interactive, so without an override Pi resolves an untrusted
+ * project folder (any folder with `.pi/` or CLAUDE.md/AGENTS.md) to NOT trusted
+ * and silently skips its `.pi/settings.json` (model/provider/keys),
+ * instructions, resources and project extensions — the daemon then comes up
+ * with no model and fails on the first turn. The operator already authorized
+ * this folder by registering/launching a daemon in it, so `--approve`
+ * (trust-for-this-run) is the correct non-interactive stance. (Does NOT affect
+ * the separate "extension loaded twice" conflict, which comes from the
+ * extension being BOTH installed in <agent>/extensions or cwd/<host>/extensions
+ * AND passed via `-e`.)
+ *
+ * Host differences (`host`), verified against omp v18.8.6:
+ *
+ *   `--approve` — **omp does not have it and rejects it outright** with
+ *   `Error: unknown flag: --approve` (exit 2), which would make every daemon
+ *   crash-loop on spawn. It is also unnecessary: omp has no equivalent project
+ *   trust gate (project config for the session cwd applies by default) and its
+ *   `tools.approvalMode` already defaults to `yolo`. We therefore pass NO
+ *   approval flag under omp rather than forcing `--auto-approve`, so a user's
+ *   explicit `always-ask`/`write` policy keeps deciding, exactly as "daemons
+ *   inherit the same config the interactive run uses" intends.
+ *
+ *   `--name` — **omp has no such flag either and rejects it too.** The daemon
+ *   still gets a stable session under omp through `--continue` (resume the most
+ *   recent session for the cwd), which is what stops restarts from piling up
+ *   new session files; only the display name is auto-generated instead of pinned
+ *   to `agent_name`.
  */
 export function rpcSpawnArgs(
   extensionPath: string,
   sessionName?: string,
   useContinue = true,
+  host: HostId = getHost(),
 ): string[] {
   return [
     "--mode", "rpc",
-    "--approve",
+    ...(host === "omp" ? [] : ["--approve"]),
     ...(useContinue ? ["--continue"] : []),
-    ...(sessionName ? ["--name", sessionName] : []),
+    ...(sessionName && host !== "omp" ? ["--name", sessionName] : []),
     "-e", extensionPath,
   ];
 }
@@ -277,7 +297,7 @@ export class RpcChild extends EventEmitter {
     this._busy = false;
     this._state = "starting";
 
-    const piTarget = resolvePiSpawn(this.opts.piBin ?? "pi");
+    const piTarget = resolvePiSpawn(this.opts.piBin ?? hostBinName());
     // Name the (single) daemon session after the daemon's configured identity,
     // so it shows up stably instead of an auto-generated name on each restart.
     // Prefer the supervisor-injected config; fall back to the on-disk file.

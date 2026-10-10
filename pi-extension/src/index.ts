@@ -75,6 +75,7 @@ import {
   type ExtensionUiBridge,
 } from "./extension_ui_bridge.js";
 import { roomIdFor } from "./rooms.js";
+import { noteExtensionApi, projectConfigDir, remoteRoot } from "./runtime.js";
 import { registerAgentTools } from "./session/tools.js";
 import { formatPeerInventory } from "./session/peer_inventory.js";
 import { MeshNode } from "./session/mesh_node.js";
@@ -2225,6 +2226,12 @@ function _appliedRegistry(): WeakSet<object> {
 }
 
 const extension: ExtensionFactory = (pi: ExtensionAPI): void => {
+  // Authoritative host identification, before any path is derived. omp injects
+  // its own module namespaces onto the API (`arktype` et al.); pi does not. See
+  // runtime.ts. Doing this first means `local_config`/`storage`/`cwd_lock` all
+  // resolve against the right state root for the rest of the process.
+  noteExtensionApi(pi);
+
   const applied = _appliedRegistry();
   if (applied.has(pi)) return;  // this session's pi was already wired
   applied.add(pi);
@@ -2981,7 +2988,7 @@ async function _cmdRootInner(
     }
     saveLocalConfig(cwd, newConfig);
     ctx.ui.notify(
-      `[remote-pi] Config saved to ${cwd}/.pi/remote-pi/config.json`,
+      `[remote-pi] Config saved to ${join(projectConfigDir(cwd), "config.json")}`,
       "info",
     );
     if (!_isCurrentRootLifecycle(rootLifecycleGeneration)) return;
@@ -3083,8 +3090,8 @@ async function _cmdStart(ctx: Pick<ExtensionContext, "ui" | "cwd">): Promise<voi
         "[remote-pi] Could not read this machine's identity, but devices are " +
         "already paired — refusing to generate a new one (that would revoke " +
         "them). This process likely cannot reach the same keyring as the " +
-        "session that paired (e.g. a systemd --user daemon). Give the service " +
-        "keyring access, or copy the paired keypair to ~/.pi/remote/identity.json " +
+        `session that paired (e.g. a systemd --user daemon). Give the service ` +
+        `keyring access, or copy the paired keypair to ${join(remoteRoot(), "identity.json")} ` +
         "(0600) so both contexts read the same identity.",
         "error",
       );
@@ -3590,7 +3597,7 @@ function _cmdConfig(ctx: Pick<ExtensionContext, "ui">): void {
   const origin = source === "env"
     ? "REMOTE_PI_RELAY environment variable"
     : source === "config"
-      ? "~/.pi/remote/config.json (set via /remote-pi set-relay)"
+      ? `${join(remoteRoot(), "config.json")} (set via /remote-pi set-relay)`
       : "built-in default";
   const live = _relayUrl && _relayUrl !== url
     ? `\n  ⚠ Live connection still on ${_relayUrl} — run /remote-pi relay stop then /remote-pi relay start to apply.`
@@ -4182,7 +4189,7 @@ function _cmdUninstall(ctx: Pick<ExtensionContext, "ui">, opts: { linkCli?: bool
       `[remote-pi] Supervisor service uninstalled (${result.platform}).`,
       `  Unit: ${result.unitPath} (${result.removed ? "removed" : "not present"})`,
       `  Steps:\n${result.log.map((l) => "    " + l).join("\n")}`,
-      `  Note: daemons registry (~/.pi/remote/daemons.json) kept — re-install restores everything.`,
+      `  Note: daemons registry (${join(remoteRoot(), "daemons.json")}) kept — re-install restores everything.`,
     ];
     if (linkCli) {
       const unlink = unlinkCliBinaries();

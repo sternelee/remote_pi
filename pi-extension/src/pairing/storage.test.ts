@@ -29,7 +29,7 @@ const {
   _setKeyringExpectedForTest,
   _setKeyringRetryForTest,
   _unlinkIdentityFileForTest,
-  _IDENTITY_FILE_FOR_TEST,
+  _identityFilePathForTest,
   _setNativeBindingErrorForTest,
 } = storage;
 import type { KeyStoreBackend } from "./storage.js";
@@ -216,18 +216,18 @@ describe("getOrCreateEd25519Keypair — headless Linux fallback", () => {
     expect(kp.publicKey.length).toBe(32);
 
     // File exists at the expected path with restrictive perms.
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+    expect(existsSync(_identityFilePathForTest())).toBe(true);
     // POSIX-only: `chmod 0o600` is a no-op on Windows (NTFS perms aren't the
     // POSIX bits + Node reports a fixed mode), so only assert the perm bits
     // off Windows. The file-creation + fallback behavior is checked above.
     if (process.platform !== "win32") {
-      const stat = statSync(_IDENTITY_FILE_FOR_TEST);
+      const stat = statSync(_identityFilePathForTest());
       const perms = stat.mode & 0o777;
       expect(perms & 0o077).toBe(0);  // group + other bits zero
     }
 
     // Round-trip: parse and check it deserializes to the same key.
-    const parsed = JSON.parse(readFileSync(_IDENTITY_FILE_FOR_TEST, "utf8")) as { pk: string; sk: string };
+    const parsed = JSON.parse(readFileSync(_identityFilePathForTest(), "utf8")) as { pk: string; sk: string };
     expect(Buffer.from(parsed.pk, "base64").length).toBe(32);
   });
 
@@ -268,7 +268,7 @@ describe("getOrCreateEd25519Keypair — @napi-rs/keyring binding unavailable", (
 
     const kp = await getOrCreateEd25519Keypair();
     expect(kp.publicKey).toHaveLength(32);
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+    expect(existsSync(_identityFilePathForTest())).toBe(true);
 
     // Second call is stable — same identity, read straight off the file.
     const again = await getOrCreateEd25519Keypair();
@@ -286,7 +286,7 @@ describe("getOrCreateEd25519Keypair — @napi-rs/keyring binding unavailable", (
     if (process.platform !== "darwin" && process.platform !== "win32") return;
 
     await expect(getOrCreateEd25519Keypair()).rejects.toBeInstanceOf(KeyringUnavailableError);
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(false);
+    expect(existsSync(_identityFilePathForTest())).toBe(false);
   });
 });
 
@@ -308,7 +308,7 @@ describe("getOrCreateEd25519Keypair — locked keyring does NOT regenerate", () 
       Buffer.from(new Uint8Array(32).fill(5)).toString("base64"),
     );
     expect(backend.reads.length).toBeGreaterThanOrEqual(2);  // retried
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(false);  // no file regen
+    expect(existsSync(_identityFilePathForTest())).toBe(false);  // no file regen
   });
 
   test("persistent failure on a core-keyring platform with no file → throws (refuses to regen)", async () => {
@@ -319,7 +319,7 @@ describe("getOrCreateEd25519Keypair — locked keyring does NOT regenerate", () 
 
     await expect(getOrCreateEd25519Keypair()).rejects.toBeInstanceOf(KeyringUnavailableError);
     // Critically: no new identity file was written (pairing not silently broken).
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(false);
+    expect(existsSync(_identityFilePathForTest())).toBe(false);
   });
 
   test("persistent failure but identity.json already exists → returns the FILE key (never throws, never regen)", async () => {
@@ -351,7 +351,7 @@ describe("getOrCreateEd25519Keypair — locked keyring does NOT regenerate", () 
 
     const kp = await getOrCreateEd25519Keypair();
     expect(kp.publicKey.length).toBe(32);
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+    expect(existsSync(_identityFilePathForTest())).toBe(true);
   });
 });
 
@@ -376,7 +376,7 @@ describe("getOrCreateEd25519Keypair — paired devices block identity minting", 
 
     await expect(getOrCreateEd25519Keypair())
       .rejects.toBeInstanceOf(storage.PairedIdentityMissingError);
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(false);
+    expect(existsSync(_identityFilePathForTest())).toBe(false);
   });
 
   test("REMOTE_PI_ALLOW_FILE_IDENTITY=1 still opts out of the guard", async () => {
@@ -389,7 +389,7 @@ describe("getOrCreateEd25519Keypair — paired devices block identity minting", 
 
     const kp = await getOrCreateEd25519Keypair();
     expect(kp.publicKey).toHaveLength(32);
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+    expect(existsSync(_identityFilePathForTest())).toBe(true);
   });
 
   test("no pairings yet → a genuine first run still mints normally", async () => {
@@ -400,7 +400,7 @@ describe("getOrCreateEd25519Keypair — paired devices block identity minting", 
 
     const kp = await getOrCreateEd25519Keypair();
     expect(kp.publicKey).toHaveLength(32);
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+    expect(existsSync(_identityFilePathForTest())).toBe(true);
   });
 });
 
@@ -490,7 +490,7 @@ describe("getOrCreateEd25519Keypair — file identity wins over a readable keyri
     _setKeyStoreBackendForTest(seed);
     _setKeyringExpectedForTest(false);  // headless Linux → writes identity.json
     const fileKp = await getOrCreateEd25519Keypair();
-    expect(existsSync(_IDENTITY_FILE_FOR_TEST)).toBe(true);
+    expect(existsSync(_identityFilePathForTest())).toBe(true);
     return fileKp;
   }
 

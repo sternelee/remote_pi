@@ -171,10 +171,12 @@ messages are unaffected.
 
 ## Install
 
-Requirements: Node 20+, Pi (the host coding agent).
+Requirements: Node 20+, and a host coding agent — **pi**
+(`@earendil-works/pi-coding-agent`) or **omp** (`@oh-my-pi/pi-coding-agent`).
 
 ```bash
-pi install npm:remote-pi
+pi install npm:remote-pi        # pi
+omp plugin link /path/to/pi-extension   # omp (local checkout)
 ```
 
 The extension self-registers the `/remote-pi` slash command and deploys an
@@ -189,6 +191,19 @@ To verify:
 
 It should print the effective relay URL and where it came from
 (`env` / `config` / `default`).
+
+### omp (oh-my-pi)
+
+remote-pi runs on both hosts from a single codebase — omp ships a pi
+compatibility layer, so no source-level port is needed. The two hosts are kept as
+**independent meshes**: `pi` uses `~/.pi/remote`, `omp` uses `~/.omp/remote`, and
+the project-local config follows suit (`<cwd>/.omp/remote-pi` under omp). A
+folder configured for one host is not silently picked up by the other.
+
+See [`docs/omp.md`](./docs/omp.md) for the verified compatibility matrix, the
+host-specific CLI flags (omp rejects pi's `--approve`/`--name`), and the known
+gaps (`ctx.ui.setFooter` is a no-op in omp; session-entry payloads are not
+wire-identical).
 
 ---
 

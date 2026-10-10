@@ -3,6 +3,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync
 import { delimiter } from "node:path";
 import { homedir, platform, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { remoteRoot } from "../runtime.js";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -116,7 +117,7 @@ export const WINDOWS_TASK_NAME = "RemotePiSupervisor";
 
 /** Path of the rendered Task Scheduler XML (input to `schtasks /Create /XML`). */
 export function taskXmlPath(): string {
-  return join(homedir(), ".pi", "remote", "RemotePiSupervisor.xml");
+  return join(remoteRoot(), "RemotePiSupervisor.xml");
 }
 
 /**
@@ -125,17 +126,17 @@ export function taskXmlPath(): string {
  * wrapper is what keeps the supervisor from flashing a console window.
  */
 export function vbsLauncherPath(): string {
-  return join(homedir(), ".pi", "remote", "RemotePiSupervisorLauncher.vbs");
+  return join(remoteRoot(), "RemotePiSupervisorLauncher.vbs");
 }
 
 /**
  * Combined stdout/stderr log for the Windows supervisor. The Task Scheduler
  * launches it hidden via wscript, so without this redirect its output (and the
  * forwarded daemon-child stderr) would vanish — mirrors launchd/systemd, which
- * already log to `~/.pi/remote/supervisord.log`.
+ * already log to `<state root>/supervisord.log`.
  */
 export function supervisordLogPath(): string {
-  return join(homedir(), ".pi", "remote", "supervisord.log");
+  return join(remoteRoot(), "supervisord.log");
 }
 
 // ── Template rendering ─────────────────────────────────────────────────────
@@ -145,14 +146,16 @@ export interface RenderVars {
   supervisor: string;
   home: string;
   user: string;
-  /** PATH inherited so `pi --mode rpc` resolves the same way it does
-   *  interactively. We snapshot `process.env.PATH` at install time. */
+  /** PATH inherited so the host agent binary (`pi`/`omp`) resolves the same
+   *  way it does interactively. We snapshot `process.env.PATH` at install
+   *  time. */
   path: string;
   /** Windows only: absolute path of the VBScript launcher the Task Scheduler
    *  action runs via `wscript.exe`. Empty on POSIX (templates ignore `{VBS}`). */
   vbs: string;
-  /** Windows only: combined stdout/stderr log the hidden supervisor appends to.
-   *  Empty on POSIX (templates ignore `{LOG}`). */
+  /** Combined stdout/stderr log the supervisor (and, on Windows, the hidden
+   *  `wscript.exe` launcher) writes to — `<state root>/supervisord.log`. Used
+   *  by the launchd template too, so it is NOT Windows-only. */
   logPath: string;
 }
 

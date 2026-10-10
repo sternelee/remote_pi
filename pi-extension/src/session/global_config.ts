@@ -1,11 +1,18 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { ipcAddress, usesNamedPipe } from "./ipc.js";
+import { remoteRoot } from "../runtime.js";
 
-const HOME_PI_REMOTE = join((process.env["REMOTE_PI_HOME"] || homedir()), ".pi", "remote");
-const SESSIONS_DIR = join(HOME_PI_REMOTE, "sessions");
-const SKILLS_DIR = join(HOME_PI_REMOTE, "skills");
+/** `<state root>/sessions`. Resolved per call — never frozen at import — so a
+ *  `pi`↔`omp` host decision or a `REMOTE_PI_HOME` retarget is honored. */
+function sessionsDirPath(): string {
+  return join(remoteRoot(), "sessions");
+}
+
+/** `<state root>/skills` — where the agent-network skill is deployed. */
+function skillsDirPath(): string {
+  return join(remoteRoot(), "skills");
+}
 /**
  * Fixed UDS session name. The local mesh is single per machine — every Pi
  * process on the host shares this broker. Previous versions exposed
@@ -16,10 +23,10 @@ const SKILLS_DIR = join(HOME_PI_REMOTE, "skills");
  */
 export const LOCAL_SESSION_NAME = "local";
 
-/** Ensures the new subdirs exist inside the existing ~/.pi/remote/. */
+/** Idempotently creates `<state root>/{sessions,skills}`. */
 export function ensureGlobalDirs(): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-  mkdirSync(SKILLS_DIR, { recursive: true });
+  mkdirSync(sessionsDirPath(), { recursive: true });
+  mkdirSync(skillsDirPath(), { recursive: true });
 }
 
 /**
@@ -28,34 +35,35 @@ export function ensureGlobalDirs(): void {
  * both the same; only the address string differs.
  */
 export function sessionSockPath(name: string): string {
-  return ipcAddress(`broker-${name}`, join(SESSIONS_DIR, name, "broker.sock"));
+  return ipcAddress(`broker-${name}`, join(sessionsDirPath(), name, "broker.sock"));
 }
 
 /** Path to the audit log for a named session. */
 export function sessionAuditPath(name: string): string {
-  return join(SESSIONS_DIR, name, "audit.jsonl");
+  return join(sessionsDirPath(), name, "audit.jsonl");
 }
 
 /** Path to the session metadata JSON. */
 export function sessionMetaPath(name: string): string {
-  return join(SESSIONS_DIR, name, "session.json");
+  return join(sessionsDirPath(), name, "session.json");
 }
 
 export function sessionsDir(): string {
-  return SESSIONS_DIR;
+  return sessionsDirPath();
 }
 
 export function skillsDir(): string {
-  return SKILLS_DIR;
+  return skillsDirPath();
 }
 
 /** Lists discovered session names from disk. */
 export function listSessions(): string[] {
   ensureGlobalDirs();
   try {
-    return readdirSync(SESSIONS_DIR).filter((entry) => {
+    const dir = sessionsDirPath();
+    return readdirSync(dir).filter((entry) => {
       try {
-        return statSync(join(SESSIONS_DIR, entry)).isDirectory();
+        return statSync(join(dir, entry)).isDirectory();
       } catch { return false; }
     });
   } catch {

@@ -18,14 +18,15 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>{HOME}/.pi/remote/supervisord.log</string>
+  <string>{LOG}</string>
   <key>StandardErrorPath</key>
-  <string>{HOME}/.pi/remote/supervisord.log</string>
+  <string>{LOG}</string>
 
   <key>EnvironmentVariables</key>
   <dict>
-    <!-- Inherit the user's shell PATH so `pi --mode rpc` resolves to the
-         same binary it would in Terminal.app (Homebrew / npm-global / etc.). -->
+    <!-- Inherit the user's shell PATH so the host agent binary (`pi` or
+         `omp`, whichever installed this service) resolves to the same one it
+         would in Terminal.app (Homebrew / npm-global / bun-global / etc.). -->
     <key>PATH</key>
     <string>{PATH}</string>
     <key>HOME</key>

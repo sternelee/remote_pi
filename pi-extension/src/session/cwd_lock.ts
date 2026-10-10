@@ -1,8 +1,8 @@
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Server } from "node:net";
 import { roomIdFor } from "../rooms.js";
+import { remoteRoot } from "../runtime.js";
 import { removeStaleSock, tryBind, tryConnect } from "./leader_election.js";
 import { ipcAddress, usesNamedPipe } from "./ipc.js";
 
@@ -33,11 +33,10 @@ import { ipcAddress, usesNamedPipe } from "./ipc.js";
  */
 
 /** Resolved at call time (not module load) so tests can redirect the lock
- *  dir away from the developer's real `~/.pi/remote/locks` via
- *  `REMOTE_PI_HOME` — same override the daemon registry honors. */
+ *  dir away from the developer's real state root via `REMOTE_PI_HOME` — same
+ *  override the daemon registry honors. */
 function locksDir(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
-  return join(root, ".pi", "remote", "locks");
+  return join(remoteRoot(), "locks");
 }
 
 export interface AcquiredLock {

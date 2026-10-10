@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket } from "node:net";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { remoteRoot } from "../runtime.js";
 import { addDaemon, listDaemons, migrateRegistryNames, removeDaemon } from "./registry.js";
 import { daemonIdForCwd } from "./id.js";
 import { defaultAgentName, type LocalConfig } from "../session/local_config.js";
@@ -59,9 +59,8 @@ const SUPERVISOR_UI_SOCK_NAME = "supervisor-ui.sock";
 const RESTART_BACKOFFS_MS = [1_000, 5_000, 30_000, 5 * 60_000];
 
 function supervisorSockPath(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
-  // POSIX → ~/.pi/remote/supervisor.sock; Windows → per-user named pipe (plan/40).
-  return ipcAddress("supervisor", join(root, ".pi", "remote", SUPERVISOR_SOCK_NAME));
+  // POSIX → <state root>/supervisor.sock; Windows → per-user named pipe (plan/40).
+  return ipcAddress("supervisor", join(remoteRoot(), SUPERVISOR_SOCK_NAME));
 }
 
 /** Persistent newline-JSON UDS the daemon extension children connect to so the
@@ -69,8 +68,7 @@ function supervisorSockPath(): string {
  *  the app's answers back. Separate from the request/reply control socket
  *  because these connections stay open for the child's whole life. */
 function uiSockPath(): string {
-  const root = process.env["REMOTE_PI_HOME"] || homedir();
-  return ipcAddress("supervisor-ui", join(root, ".pi", "remote", SUPERVISOR_UI_SOCK_NAME));
+  return ipcAddress("supervisor-ui", join(remoteRoot(), SUPERVISOR_UI_SOCK_NAME));
 }
 
 /** Thrown by `start()` when another live supervisor already holds the UDS.

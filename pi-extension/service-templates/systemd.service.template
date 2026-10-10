@@ -10,8 +10,9 @@ Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal
-# Inherit the user's shell PATH so `pi --mode rpc` resolves to the same
-# binary it would in an interactive shell (npm-global / Homebrew / etc.).
+# Inherit the user's shell PATH so the host agent binary (`pi` or `omp`,
+# whichever installed this service) resolves to the same one it would in an
+# interactive shell (npm-global / Homebrew / bun-global / etc.).
 Environment="PATH={PATH}"
 Environment="HOME={HOME}"
 

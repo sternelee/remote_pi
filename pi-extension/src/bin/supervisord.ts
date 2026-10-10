@@ -19,14 +19,17 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Supervisor, SupervisorAlreadyRunningError } from "../daemon/supervisor.js";
+import { hostBinName, remoteRoot } from "../runtime.js";
 
 const HELP_TEXT = `pi-supervisord — Remote Pi daemon supervisor
 
 Usage: pi-supervisord
 
-Runs the long-lived supervisor: reads ~/.pi/remote/daemons.json, spawns one
-\`pi --mode rpc\` child per entry, and listens on ~/.pi/remote/supervisor.sock
-for control requests from the \`remote-pi\` CLI.
+Runs the long-lived supervisor: reads <state root>/daemons.json, spawns one
+\`<host> --mode rpc\` child per entry, and listens on <state root>/supervisor.sock
+for control requests from the \`remote-pi\` CLI. "State root" and "host" are
+resolved per runtime: \`~/.pi/remote\` + \`pi\` under Pi, \`~/.omp/remote\` +
+\`omp\` under omp.
 
 This binary takes NO arguments — it is normally launched by systemd/launchd
 (via \`remote-pi install\`), not by hand. Manage the fleet with:
@@ -70,7 +73,7 @@ async function main(): Promise<void> {
   const supervisor = new Supervisor({ extensionPath });
   await supervisor.start();
   process.stderr.write(
-    `[pi-supervisord] up — UDS: ~/.pi/remote/supervisor.sock, extension: ${extensionPath}\n`,
+    `[pi-supervisord] up — host: ${hostBinName()}, state: ${remoteRoot()}, extension: ${extensionPath}\n`,
   );
 
   const shutdown = async (signal: string) => {
