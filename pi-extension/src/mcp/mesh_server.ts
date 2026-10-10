@@ -14,9 +14,13 @@
  * Env: REMOTE_PI_MCP_CWD, REMOTE_PI_MCP_NAME
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Type } from "typebox";
+import type { Static, TObject } from "typebox";
+import { Value } from "typebox/value";
 import { MeshNode } from "../session/mesh_node.js";
 import { loadLocalConfig, defaultAgentName, localConfigExists } from "../session/local_config.js";
 import { formatMeshAckResult } from "./mesh_result.js";
@@ -113,11 +117,25 @@ let meshReady = false;
 let degradedReason = "connecting to the mesh…";
 
 // ── MCP server setup ──────────────────────────────────────────────────────────
+//
+// We deliberately use the LOW-LEVEL `Server` rather than the high-level
+// `McpServer`: `McpServer.registerTool` accepts Zod schemas only (its
+// `zod-compat` layer detects them via `_zod`/`_def`, derives the wire JSON
+// Schema with `zod-to-json-schema`, and parses arguments with `zod.safeParse`).
+// A non-Zod schema is not rejected loudly — it degrades to an empty
+// `{ type: "object", properties: {} }` wire schema and then throws on the first
+// call. TypeBox is the project's schema builder (see `session/tools.ts`), so we
+// register the tools on the low-level server, which speaks plain JSON Schema —
+// exactly what `Type.*` emits — and validate arguments with TypeBox `Value`.
 
-const mcp = new McpServer(
+const mcp = new Server(
   { name: "remote-pi-mesh", version: "0.4.3" },
   {
-    capabilities: { experimental: { "claude/channel": {} } },
+    // `tools: {}` must be declared explicitly here: unlike `McpServer`, the
+    // low-level `Server` does not register the capability for you, and
+    // `setRequestHandler` asserts it at registration time (a missing entry
+    // throws "Server does not support tools").
+    capabilities: { tools: {}, experimental: { "claude/channel": {} } },
     instructions: [
       `You are connected to the remote-pi agent mesh as "${AGENT_NAME}".`,
       "At the start of each turn call get_messages to check for incoming messages from other agents.",
@@ -129,60 +147,148 @@ const mcp = new McpServer(
   },
 );
 
-function notReady() {
+function notReady(): CallToolResult {
   return {
-    content: [{ type: "text" as const, text: `Mesh not available yet — ${degradedReason}` }],
+    content: [{ type: "text", text: `Mesh not available yet — ${degradedReason}` }],
     isError: true,
   };
 }
 
-mcp.registerTool("list_peers", {
-  description: "List all agents currently in the mesh (local + remote PCs).",
-  inputSchema: {},
-}, async () => {
-  if (!meshReady) return notReady();
-  try {
-    const peers = await mesh.listPeers();
-    return { content: [{ type: "text" as const, text: peers.length > 0 ? peers.join("\n") : "(no peers)" }] };
-  } catch (e) {
-    return { content: [{ type: "text" as const, text: `list_peers failed: ${String(e)}` }], isError: true };
-  }
+/** Build a plain-text tool result, optionally flagged as an error. */
+function text(value: string, isError = false): CallToolResult {
+  return isError
+    ? { content: [{ type: "text", text: value }], isError: true }
+    : { content: [{ type: "text", text: value }] };
+}
+
+/**
+ * Validate raw tool arguments against a TypeBox schema. Returns the narrowed
+ * value on success, or a human-readable reason on failure — the same
+ * "reject with a readable message" behavior `registerTool` gave us when it
+ * parsed arguments through Zod.
+ */
+function parseArgs<T extends TObject>(
+  schema: T,
+  raw: unknown,
+): { ok: true; value: Static<T> } | { ok: false; message: string } {
+  // MCP clients omit `arguments` entirely for zero-argument tools.
+  const args: unknown = raw ?? {};
+  if (Value.Check(schema, args)) return { ok: true, value: args as Static<T> };
+  const [first] = Value.Errors(schema, args);
+  const at = first?.instancePath ? ` at ${first.instancePath}` : "";
+  return { ok: false, message: `Invalid arguments${at}: ${first?.message ?? "schema mismatch"}` };
+}
+
+// ── Tool schemas ──────────────────────────────────────────────────────────────
+
+const NoParams = Type.Object({});
+
+const AgentSendParams = Type.Object({
+  to: Type.String({
+    description:
+      'Peer address from list_peers (form "<cwd>@<name>", or "<pc>:<cwd>@<name>" cross-PC) ' +
+      'echoed verbatim, or "broadcast"',
+  }),
+  body: Type.Unknown({ description: "Message body — any JSON value" }),
+  re: Type.Optional(Type.String({ description: "Optional: id of the message you are replying to" })),
 });
 
-mcp.registerTool("agent_send", {
-  description: 'Send a message to another agent. Use "broadcast" to send to all peers.',
-  inputSchema: {
-    to: z.string().describe('Peer address from list_peers (form "<cwd>@<name>", or "<pc>:<cwd>@<name>" cross-PC) echoed verbatim, or "broadcast"'),
-    body: z.unknown().describe("Message body — any JSON value"),
-    re: z.string().optional().describe("Optional: id of the message you are replying to"),
+// ── Tools ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Widen a TypeBox `TObject` to the SDK's wire `Tool["inputSchema"]`.
+ *
+ * TypeBox already emits plain JSON Schema (`{ type: "object", properties,
+ * required }`) — which IS this wire field's shape — so the conversion is
+ * type-level only and no runtime transform happens. The assertion is needed
+ * because the SDK types the field as a Zod `catchall` object: that carries a
+ * `[key: string]: unknown` index signature, which a `TObject` neither declares
+ * nor structurally overlaps with. Centralizing it here keeps the assertion out
+ * of the tool definitions, where it could otherwise mask a real schema mistake.
+ */
+function toWireSchema(schema: TObject): Tool["inputSchema"] {
+  return schema as unknown as Tool["inputSchema"];
+}
+
+interface MeshTool {
+  name: string;
+  description: string;
+  inputSchema: TObject;
+  handler: (args: unknown) => CallToolResult | Promise<CallToolResult>;
+}
+
+const TOOLS: MeshTool[] = [
+  {
+    name: "list_peers",
+    description: "List all agents currently in the mesh (local + remote PCs).",
+    inputSchema: NoParams,
+    handler: async () => {
+      if (!meshReady) return notReady();
+      try {
+        const peers = await mesh.listPeers();
+        return text(peers.length > 0 ? peers.join("\n") : "(no peers)");
+      } catch (e) {
+        return text(`list_peers failed: ${String(e)}`, true);
+      }
+    },
   },
-}, async ({ to, body, re }) => {
-  if (!meshReady) return notReady();
-  if (to === mesh.address() || to === mesh.name()) {
-    return { content: [{ type: "text" as const, text: "Cannot send to yourself" }], isError: true };
-  }
-  try {
-    if (to === "broadcast") {
-      await mesh.send(to, body, re ?? null);
-      return { content: [{ type: "text" as const, text: "Broadcast sent" }] };
-    }
-    const ack = await mesh.sendWithAck(to, body, re ?? null);
-    return formatMeshAckResult(to, ack);
-  } catch (e) {
-    return { content: [{ type: "text" as const, text: `send failed: ${String(e)}` }], isError: true };
-  }
-});
+  {
+    name: "agent_send",
+    description: 'Send a message to another agent. Use "broadcast" to send to all peers.',
+    inputSchema: AgentSendParams,
+    handler: async (raw) => {
+      const parsed = parseArgs(AgentSendParams, raw);
+      if (!parsed.ok) return text(parsed.message, true);
+      const { to, body, re } = parsed.value;
 
-mcp.registerTool("get_messages", {
-  description: "Return and clear all pending incoming messages from other agents. Call at the start of each turn.",
-  inputSchema: {},
-}, async () => {
-  const msgs = inbox.splice(0);
-  if (msgs.length === 0) return { content: [{ type: "text" as const, text: "(no messages)" }] };
-  const lines = msgs.map((m) =>
-    `[${m.at}] from=${m.from}${m.re ? ` re=${m.re}` : ""}\nid=${m.id}\n${JSON.stringify(m.body, null, 2)}`,
-  );
-  return { content: [{ type: "text" as const, text: lines.join("\n\n") }] };
+      if (!meshReady) return notReady();
+      if (to === mesh.address() || to === mesh.name()) {
+        return text("Cannot send to yourself", true);
+      }
+      try {
+        if (to === "broadcast") {
+          await mesh.send(to, body, re ?? null);
+          return text("Broadcast sent");
+        }
+        const ack = await mesh.sendWithAck(to, body, re ?? null);
+        return formatMeshAckResult(to, ack);
+      } catch (e) {
+        return text(`send failed: ${String(e)}`, true);
+      }
+    },
+  },
+  {
+    name: "get_messages",
+    description:
+      "Return and clear all pending incoming messages from other agents. Call at the start of each turn.",
+    inputSchema: NoParams,
+    handler: async () => {
+      const msgs = inbox.splice(0);
+      if (msgs.length === 0) return text("(no messages)");
+      const lines = msgs.map((m) =>
+        `[${m.at}] from=${m.from}${m.re ? ` re=${m.re}` : ""}\nid=${m.id}\n${JSON.stringify(m.body, null, 2)}`,
+      );
+      return text(lines.join("\n\n"));
+    },
+  },
+];
+
+const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
+
+mcp.setRequestHandler(ListToolsRequestSchema, () => ({
+  tools: TOOLS.map(
+    (t): Tool => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: toWireSchema(t.inputSchema),
+    }),
+  ),
+}));
+
+mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const tool = TOOLS_BY_NAME.get(req.params.name);
+  if (!tool) return text(`Unknown tool: ${req.params.name}`, true);
+  return await tool.handler(req.params.arguments);
 });
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -232,7 +338,9 @@ async function main(): Promise<void> {
     inbox.push(msg);
     // Push via claude/channel so Claude wakes immediately (when the session
     // was launched with --dangerously-load-development-channels server:remote-pi-mesh).
-    void mcp.server.notification({
+    // NOTE: with the low-level `Server`, `mcp` IS the protocol server — there is
+    // no `.server` indirection as there was on `McpServer`.
+    void mcp.notification({
       method: "notifications/claude/channel",
       params: { content: `📨 Message from ${msg.from}:\n${JSON.stringify(msg.body, null, 2)}` },
     }).catch(() => { /* channels not enabled — get_messages polling covers it */ });
