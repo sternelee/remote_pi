@@ -175,6 +175,7 @@ export function Composer({
               <button
                 type="button"
                 onClick={() => setImages([])}
+                className="px-1"
                 style={{ color: "var(--pi-dim)" }}
                 aria-label="Remove attachment"
               >
@@ -267,7 +268,7 @@ export function Composer({
           onClick={() => fileRef.current?.click()}
           disabled={disabled || busy || visionBlocked}
           title={visionBlocked ? "The current model cannot see images" : undefined}
-          className="underline-offset-2 hover:underline disabled:opacity-50"
+          className="underline-offset-2 hover:underline py-1 disabled:opacity-50"
         >
           {busy ? "reading…" : "attach image"}
         </button>
@@ -283,20 +284,20 @@ export function Composer({
             type="button"
             onClick={toggleVoice}
             disabled={disabled}
-            className="underline-offset-2 hover:underline disabled:opacity-50"
+            className="underline-offset-2 hover:underline py-1 disabled:opacity-50"
             style={voice.listening ? { color: "var(--pi-red)" } : undefined}
             title="Dictate a message with your browser's speech service"
           >
             {voice.listening ? "stop voice" : "voice"}
           </button>
         ) : null}
-        <span>{working ? "Enter to steer the running turn" : "Enter to send"}</span>
+        <span>{working ? "Enter to steer" : "Enter to send"}</span>
         {working ? (
           <button
             type="button"
             onClick={onInterrupt}
             disabled={disabled}
-            className="underline-offset-2 hover:underline disabled:opacity-50"
+            className="underline-offset-2 hover:underline py-1 disabled:opacity-50"
             style={{ color: "var(--pi-yellow)" }}
             title="Stop the running turn"
           >
@@ -308,7 +309,7 @@ export function Composer({
             type="button"
             onClick={() => onQueue(draft)}
             disabled={!draft.trim()}
-            className="underline-offset-2 hover:underline disabled:opacity-50"
+            className="underline-offset-2 hover:underline py-1 disabled:opacity-50"
             title="Hold this draft on the Pi and send it when the current turn ends"
           >
             queue for later
@@ -323,7 +324,7 @@ export function Composer({
               setDraft(queuedText);
               onQueue("");
             }}
-            className="text-left underline-offset-2 hover:underline"
+            className="block min-w-0 max-w-[16rem] truncate py-1 text-left underline-offset-2 hover:underline"
             style={{ color: "var(--pi-yellow)" }}
             title="Pull this queued draft back into the composer"
           >
@@ -352,7 +353,7 @@ export function Composer({
           <button
             type="button"
             onClick={ackVoiceAndStart}
-            className="underline-offset-2 hover:underline"
+            className="underline-offset-2 hover:underline py-1"
             style={{ color: "var(--pi-rose)" }}
           >
             got it

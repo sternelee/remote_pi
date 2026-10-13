@@ -270,6 +270,57 @@ a {
 }
 
 /*
+ * Phone ergonomics.
+ *
+ * viewportFit=cover plus the standalone PWA (appleWebApp capable,
+ * black-translucent) let the page draw under the notch and home indicator, so
+ * every screen root pads itself with .pi-safe-pad / .pi-safe-pad-roomy. The
+ * gutter keeps its normal size where there is no inset and grows to clear the
+ * hardware where there is one. `h-dvh` screens stay correct because the
+ * preflight makes them border-box — the insets come out of the viewport, not
+ * on top of it. These rules are unlayered on purpose: they must beat Tailwind's
+ * layered utilities, like the .pi-markdown block above.
+ */
+.pi-safe-pad,
+.pi-safe-pad-roomy {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+}
+
+/* Scrolling pages (home, pairing) keep the roomier `py-6` rhythm. */
+.pi-safe-pad-roomy {
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+/* Wider viewports keep the old `sm:px-5` gutter (insets are 0 there). */
+@media (min-width: 640px) {
+  .pi-safe-pad,
+  .pi-safe-pad-roomy {
+    padding-left: max(1.25rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1.25rem, env(safe-area-inset-right, 0px));
+  }
+}
+
+/*
+ * iOS Safari magnifies the whole page — without ever zooming back — when an
+ * input whose computed font-size is under 16px receives focus. Every field
+ * here is 12-13px terminal text, so on WebKit touch devices the interactive
+ * controls pay 16px. maximum-scale=1 would prevent the zoom too, but it
+ * forbids zooming entirely, which is a worse trade. Unlayered, so it beats
+ * the text-[13px]/text-[12px] utilities layered on top of each field.
+ */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/*
  * shadcn Dialog motion. `components/ui/dialog.tsx` drops the `animate-in` /
  * `animate-out` utilities (no `tw-animate-css` dependency), so the enter
  * transition is defined here against Radix's `data-state`.

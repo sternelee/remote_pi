@@ -24,6 +24,11 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // Let the virtual keyboard resize the layout viewport (Chrome/Android) so
+  // the composer and its footer actions stay above the keys instead of
+  // trusting the browser's auto-scroll. iOS Safari ignores this key; its
+  // focus-zoom workaround lives in globals.css instead.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

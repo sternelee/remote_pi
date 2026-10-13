@@ -208,7 +208,7 @@ export function QuestionPrompt({
                         setActive(rowIndex);
                         toggle(q.id, option.value, q.type === "multi");
                       }}
-                      className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5"
+                      className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-1.5 sm:py-0.5"
                       style={{
                         background: isActive
                           ? "color-mix(in srgb, var(--pi-rose) 12%, transparent)"
@@ -245,7 +245,7 @@ export function QuestionPrompt({
                             [q.id]: prev[q.id] === option.value ? undefined : option.value,
                           }))
                         }
-                        className="ml-6 text-[11px] underline-offset-2 hover:underline"
+                        className="ml-6 py-1 text-[11px] underline-offset-2 hover:underline"
                         style={{ color: optionNote.trim() ? ROSE : DIM }}
                       >
                         {optionNote.trim() ? "noted" : "+ note"}

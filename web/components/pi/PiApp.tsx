@@ -123,21 +123,14 @@ export function PiApp() {
       {session.phase !== "booting" && session.phase !== "unsupported" && view === "session" ? (
         <>
           <SessionScreen session={session} onHome={() => setView("home")} />
-          <div className="fixed bottom-2 right-3">
-            <button
-              type="button"
-              onClick={() => setView("pair")}
-              className="font-mono text-[11px] underline-offset-2 hover:underline"
-              style={{ color: "var(--pi-dim)" }}
-            >
-              {session.peers.length > 1 ? "switch / pair another Pi" : "pair another Pi"}
-            </button>
-          </div>
+          {/* No fixed "pair another Pi" corner button here anymore: it sat on
+              top of the composer footer on phones. Pairing lives on the home
+              screen, one `← projects` tap away. */}
         </>
       ) : null}
 
       {session.phase !== "booting" && session.phase !== "unsupported" && view === "pair" ? (
-        <div className="px-3 py-6 sm:px-5">
+        <div className="pi-safe-pad-roomy">
           <div className="mx-auto mb-4 flex w-full max-w-2xl items-baseline gap-3">
             <button
               type="button"
@@ -180,6 +173,9 @@ export function PiApp() {
  * Not an automatic reload: a reload drops the transcript, so the user picks the
  * moment — and while a turn is running the banner says so, because that is the
  * one moment they should not.
+ *
+ * Anchored top-left, clear of the safe-area insets: the bottom of the screen
+ * belongs to the composer and the soft keyboard.
  */
 export function UpdateBanner({
   working,
@@ -193,7 +189,7 @@ export function UpdateBanner({
   return (
     <div
       role="status"
-      className="fixed bottom-2 left-3 flex max-w-[calc(100%_-_1.5rem)] flex-wrap items-baseline gap-x-3 gap-y-1 border-l-2 pl-2 font-mono text-[11px]"
+      className="fixed top-[max(0.5rem,env(safe-area-inset-top,0px))] left-[max(0.75rem,env(safe-area-inset-left,0px))] z-40 flex max-w-[calc(100%_-_1.5rem)] flex-wrap items-baseline gap-x-3 gap-y-1 border-l-2 pl-2 font-mono text-[11px]"
       style={{ borderColor: "var(--pi-yellow)", color: "var(--pi-muted)" }}
     >
       <span style={{ color: "var(--pi-yellow)" }}>new version ready</span>

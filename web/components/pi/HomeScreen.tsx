@@ -67,7 +67,7 @@ export function HomeScreen({
   const visible = useMemo(() => filterProjects(projects, filter), [projects, filter]);
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-3 py-6 font-mono text-[13px] sm:px-5">
+    <div className="pi-safe-pad-roomy mx-auto flex w-full max-w-2xl flex-col gap-3 font-mono text-[13px]">
       <header className="flex items-baseline justify-between">
         <h1 className="text-[15px]" style={{ color: FG }}>
           projects
@@ -152,7 +152,9 @@ export function HomeScreen({
                     <span aria-hidden="true" style={{ color: tone }}>
                       ●
                     </span>
-                    <span style={{ color: FG }}>{title}</span>
+                    <span className="min-w-0 break-words" style={{ color: FG }}>
+                      {title}
+                    </span>
                     {project.active ? <span style={{ color: ROSE }}>· current</span> : null}
                     <span className="ml-auto text-[11px]" style={{ color: tone }}>
                       {label}

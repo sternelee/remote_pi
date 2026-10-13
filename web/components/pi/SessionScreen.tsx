@@ -89,14 +89,14 @@ export function SessionScreen({
   const peerLabel = peer ? (peer.nickname ?? peer.session_name) : "no peer";
 
   return (
-    <div className="flex h-dvh min-w-0 flex-col gap-3 px-3 py-3 sm:px-5">
+    <div className="pi-safe-pad flex h-dvh min-w-0 flex-col gap-3">
       {/* ── status rail ─────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-[12px]">
         {onHome ? (
           <button
             type="button"
             onClick={onHome}
-            className="underline-offset-2 hover:underline"
+            className="underline-offset-2 hover:underline py-1"
             style={{ color: MUTED }}
             title="Back to all projects"
           >
@@ -115,7 +115,7 @@ export function SessionScreen({
             <button
               type="button"
               onClick={onHome}
-              className="underline-offset-2 hover:underline"
+              className="underline-offset-2 hover:underline py-1"
               style={{ color: FG }}
               title="All projects"
             >
@@ -130,7 +130,7 @@ export function SessionScreen({
               setShowSettings(false);
               setShowMenu(false);
             }}
-            className="underline-offset-2 hover:underline"
+            className="underline-offset-2 hover:underline py-1"
             style={{ color: showInfo ? "var(--pi-fg)" : MUTED }}
             title="Session name, path, model and pairing details"
           >
@@ -144,7 +144,7 @@ export function SessionScreen({
               setShowSettings(false);
               setShowMenu(false);
             }}
-            className="underline-offset-2 hover:underline"
+            className="underline-offset-2 hover:underline py-1"
             style={{ color: showActions ? "var(--pi-fg)" : MUTED }}
             title="Compact context, new session, model and thinking level"
           >
@@ -173,7 +173,7 @@ export function SessionScreen({
                   .find((e) => e.kind === "agent");
                 if (lastAgent) session.cancelTurn(lastAgent.id);
               }}
-              className="underline-offset-2 hover:underline"
+              className="underline-offset-2 hover:underline py-1"
               style={{ color: YELLOW }}
             >
               interrupt
@@ -255,7 +255,7 @@ export function SessionScreen({
       {/* ── scrollback ──────────────────────────────────────────────────── */}
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-1"
         aria-live="polite"
         aria-label="Agent transcript"
       >
