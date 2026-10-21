@@ -17,6 +17,13 @@ import {
   type StoredIdentity,
 } from "../crypto/ed25519";
 import { parseQrPayload, DEFAULT_RELAY_URL, toWsRelayUrl } from "../pairing/qr";
+import {
+  parseShareHash,
+  shareLinkFrom,
+  ShareLinkError,
+  SHARE_VERSION,
+  type SharePayload,
+} from "../pairing/share";
 import { uuid7 } from "../protocol/uuid7";
 import type {
   ActionName,
@@ -179,6 +186,11 @@ export interface PiSession {
   uiControl: UiControlState;
   /** Browser-local preferences (hide tool calls, voice disclosure ack). */
   prefs: Preferences;
+  /**
+   * Build a `#/share=…` link that installs this device's identity — its key
+   * and pairings — on another phone. Undefined before the identity loads.
+   */
+  buildShareLink: () => string | undefined;
   pairFromQr: (raw: string) => Promise<void>;
   selectPeer: (epk: string) => void;
   /** Open a specific room on a paired Pi (the home-screen entry point). */
@@ -257,6 +269,18 @@ export function usePiSession(): PiSession {
   useEffect(() => {
     let cancelled = false;
 
+    // Read (and strip) the #/share hash synchronously, before any await:
+    // PiApp's hash-sync effect below can rewrite location.hash before an
+    // async step resumes, and the secret should not linger in the URL bar.
+    let share: SharePayload | null = null;
+    try {
+      share = parseShareHash(location.hash);
+      if (share) history.replaceState(null, "", location.pathname + location.search);
+    } catch (err) {
+      history.replaceState(null, "", location.pathname + location.search);
+      notice("warn", err instanceof ShareLinkError ? err.message : "That share link is unusable.");
+    }
+
     void (async () => {
       if (!(await isEd25519Supported())) {
         if (!cancelled) setPhase("unsupported");
@@ -264,7 +288,23 @@ export function usePiSession(): PiSession {
       }
 
       let stored = await loadIdentity();
-      if (!stored) {
+      if (!stored && share) {
+        // Import the shared identity into a fresh store only. A device that
+        // already has its own identity keeps it — a share link must never
+        // silently replace an existing device key.
+        stored = share.identity;
+        await saveIdentity(stored);
+        for (const peer of share.peers) await savePeer(peer);
+        if (share.relayUrl || share.lastPeerEpk) {
+          await mergeSettings({
+            ...(share.relayUrl ? { relay_url: share.relayUrl } : {}),
+            ...(share.lastPeerEpk ? { last_peer_epk: share.lastPeerEpk } : {}),
+          });
+        }
+        notice("info", "Imported the shared identity — this device can use its sessions.");
+      } else if (stored && share) {
+        notice("warn", "Share link ignored — this device already has its own identity.");
+      } else if (!stored) {
         stored = await generateIdentity();
         await saveIdentity(stored);
       }
@@ -654,6 +694,22 @@ export function usePiSession(): PiSession {
 
   // ── pairing ──────────────────────────────────────────────────────────────
 
+  // ── share link: hand this device's identity to another phone ───────────
+
+  const buildShareLink = useCallback(
+    () =>
+      identity
+        ? shareLinkFrom(window.location.href, {
+            v: SHARE_VERSION,
+            identity,
+            peers,
+            relayUrl,
+            lastPeerEpk: activeEpk,
+          })
+        : undefined,
+    [identity, peers, relayUrl, activeEpk],
+  );
+
   const pairFromQr = useCallback(
     async (raw: string) => {
       if (!identity) throw new Error("Identity is not ready yet.");
@@ -941,6 +997,7 @@ export function usePiSession(): PiSession {
     queued,
     uiControl,
     prefs,
+    buildShareLink,
     pairFromQr,
     selectPeer,
     openProject,

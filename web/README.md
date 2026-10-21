@@ -64,6 +64,7 @@ lib/protocol/{types,codec,uuid7}.ts   wire types, envelope codec, UUIDv7
 lib/crypto/ed25519.ts       WebCrypto Ed25519 identity
 lib/storage/store.ts        IndexedDB: identity, paired peers, settings
 lib/pairing/qr.ts           remotepi:// payload parsing, relay URL handling
+lib/pairing/share.ts         #/share= access-sharing payload codec (pure, tested)
 lib/relay/client.ts         WebSocket + challenge-response + reconnect
 lib/session/transcript.ts   protocol messages → timeline (pure, tested)
 lib/session/answers.ts      prompt answer construction, both wire paths (pure)
@@ -107,6 +108,14 @@ traffic (see the header comment in `lib/relay/client.ts`).
   QR/relay mismatch detection, and reconnect to the remembered peer on open
 - Relay handshake (`hello` → `challenge` → `auth`), reconnect with backoff,
   protocol ping, dead-socket detection
+- **Share access** — the settings dialog copies a `#/share=…` link carrying this
+  device's identity (private JWK + paired-Pi records) in the URL fragment, which
+  never reaches the Worker or the relay; a second phone that opens it *before it
+  has an identity of its own* imports everything and becomes this device, so
+  every session is instantly usable. The fragment is stripped from the URL bar
+  on load, and an existing identity is never silently replaced — a share link
+  into an already-provisioned browser is ignored with a notice. Anyone holding
+  the link can act as this device, which the dialog copy says out loud
 - Room addressing from the QR's `rm` and `pair_ok.room_id`, inbound room
   filtering, and `subscribe_rooms`/`rooms_check` discovery that retargets the
   room and surfaces the Pi's current model and thinking level

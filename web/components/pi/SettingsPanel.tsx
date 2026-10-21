@@ -52,6 +52,7 @@ export function SettingsPanel({
   voiceNoticeAck,
   onAckVoiceNotice,
   devicePubkey,
+  onBuildShareLink,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,9 +68,13 @@ export function SettingsPanel({
   voiceNoticeAck: boolean;
   onAckVoiceNotice: () => void;
   devicePubkey?: string;
+  /** Builds the `#/share=…` link for this device, or undefined pre-boot. */
+  onBuildShareLink?: () => string | undefined;
 }) {
   const [draft, setDraft] = useState(relayUrl);
   const [error, setError] = useState<string | null>(null);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
   function saveRelay() {
     const next = draft.trim();
@@ -79,6 +84,20 @@ export function SettingsPanel({
     }
     setError(null);
     onSaveRelayUrl(next);
+  }
+
+  async function share() {
+    setShareCopied(false);
+    const link = onBuildShareLink?.();
+    setShareLink(link ?? null);
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setShareCopied(true);
+    } catch {
+      // Clipboard can be denied (e.g. a non-secure context); the link stays
+      // on screen below for a manual long-press copy.
+    }
   }
 
   return (
@@ -206,6 +225,38 @@ export function SettingsPanel({
             <span className="break-words select-all text-[11px]" style={{ color: DIM }}>
               {devicePubkey ? shorten(devicePubkey) : "—"}
             </span>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-1">
+            <span style={{ color: MUTED }}>Share access</span>
+            <span className="text-[11px] break-words" style={{ color: DIM }}>
+              Copy a link that installs this device&apos;s identity — its key and pairings — on
+              another phone, so it can use the same sessions. The secret lives in the URL
+              fragment and never reaches the server, but anyone who gets the link becomes this
+              device.
+            </span>
+            <button
+              type="button"
+              onClick={() => void share()}
+              className="w-fit text-left underline-offset-2 hover:underline"
+              style={{ color: FG }}
+            >
+              share this device
+            </button>
+            {shareLink && !shareCopied ? (
+              <span
+                className="break-all select-all text-[11px]"
+                style={{ color: DIM }}
+                title="Long-press to copy if the clipboard was denied"
+              >
+                {shareLink}
+              </span>
+            ) : null}
+            {shareCopied ? (
+              <span className="text-[11px]" style={{ color: ROSE }}>
+                link copied — paste it in a browser on the other phone
+              </span>
+            ) : null}
           </div>
         </div>
       </DialogContent>

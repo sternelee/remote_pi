@@ -556,6 +556,21 @@ describe("settings panel", () => {
     expect(html).toContain("aBcDeFgHiJkLmNoPqRsT…");
   });
 
+  it("offers sharing this device's access as a copied link", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel
+        {...base}
+        devicePubkey="aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789"
+        onBuildShareLink={() => "https://pwa.example/#/share=abc123"}
+      />,
+    );
+    expect(html).toContain("Share access");
+    expect(html).toContain("share this device");
+    expect(html).toContain("anyone who gets the link becomes this device");
+    // The link is built and copied on click, not printed before then.
+    expect(html).not.toContain("#/share=abc123");
+  });
+
   it("offers a theme switcher with the current mode selected", () => {
     const html = renderToStaticMarkup(<SettingsPanel {...base} theme="light" />);
     expect(html).toContain('aria-label="Theme"');

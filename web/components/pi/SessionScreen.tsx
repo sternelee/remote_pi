@@ -250,6 +250,7 @@ export function SessionScreen({
           if (next && notifications.permission === "default") void notifications.request();
         }}
         devicePubkey={session.identity ? publicKeyB64Of(session.identity) : undefined}
+        onBuildShareLink={session.buildShareLink}
       />
 
       {/* ── scrollback ──────────────────────────────────────────────────── */}
