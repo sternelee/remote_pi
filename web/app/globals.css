@@ -321,6 +321,22 @@ a {
 }
 
 /*
+ * Phone composer diet. The CodexPrompt input surface pads a full blank
+ * line above and below the `›` line (`py-[1lh]`), which costs ~28px of
+ * vertical space under the on-screen keyboard. On phones (below the `sm`
+ * breakpoint) the surface pays 0.35lh instead. Unlayered so it beats the
+ * layered `py-[1lh]` utility, and scoped to the surface's `:first-child`
+ * div so the status row below it keeps its rhythm. The vendored
+ * brainless component stays untouched — `pi-composer` is passed via its
+ * `className` prop.
+ */
+@media (max-width: 639.98px) {
+  .pi-composer > div:first-child {
+    padding-block: 0.35lh;
+  }
+}
+
+/*
  * shadcn Dialog motion. `components/ui/dialog.tsx` drops the `animate-in` /
  * `animate-out` utilities (no `tw-animate-css` dependency), so the enter
  * transition is defined here against Radix's `data-state`.

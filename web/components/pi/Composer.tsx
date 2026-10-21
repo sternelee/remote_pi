@@ -259,7 +259,9 @@ export function Composer({
         placeholder={disabled ? "Connect a Pi to start typing…" : "Ask pi…"}
         model={model ?? "pi"}
         directory={directory}
-        className={disabled ? "opacity-60" : undefined}
+        // `pi-composer` scopes the phone-height override in globals.css to
+        // this composer without touching the vendored CodexPrompt.
+        className={disabled ? "pi-composer opacity-60" : "pi-composer"}
       />
 
       <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 pl-[2ch] font-mono text-[11px] text-[var(--pi-codex-dim)]">
