@@ -12,6 +12,52 @@ const ROSE = "var(--pi-rose)";
 
 export type HomeFilter = "all" | "online" | "offline";
 
+/** One device node in the home tree: every room a paired Pi exposes. */
+export interface DeviceGroup {
+  epk: string;
+  peerLabel: string;
+  hostname?: string;
+  /** True when any of the device's rooms is online. */
+  online: boolean;
+  /** True when any of the device's rooms is working. */
+  working: boolean;
+  projects: ProjectEntry[];
+}
+
+/**
+ * Group a flat project list into devices, preserving first-appearance order
+ * (the peers order from `usePiSession`). Presence aggregates over the rooms:
+ * one working room makes the whole device "working".
+ */
+export function groupByDevice(projects: ProjectEntry[]): DeviceGroup[] {
+  const byEpk = new Map<string, DeviceGroup>();
+  for (const project of projects) {
+    let group = byEpk.get(project.epk);
+    if (!group) {
+      group = {
+        epk: project.epk,
+        peerLabel: project.peerLabel,
+        hostname: project.hostname,
+        online: false,
+        working: false,
+        projects: [],
+      };
+      byEpk.set(project.epk, group);
+    }
+    group.online ||= project.online;
+    group.working ||= project.working ?? false;
+    group.projects.push(project);
+  }
+  return [...byEpk.values()];
+}
+
+/** Aggregate presence tone for a device header. */
+export function devicePresence(group: DeviceGroup): { tone: string; label: string } {
+  if (group.working) return { tone: YELLOW, label: "working" };
+  if (group.online) return { tone: GREEN, label: "online" };
+  return { tone: MUTED, label: "offline" };
+}
+
 export const HOME_FILTERS: HomeFilter[] = ["all", "online", "offline"];
 
 /** Pure filter used by the tabs; exported so it is testable on its own. */
@@ -48,7 +94,8 @@ export function presenceOf(project: ProjectEntry): { tone: string; label: string
 }
 
 /**
- * The home screen: every project (room) across paired Pis, as one list.
+ * The home screen: a two-level tree of devices and their projects (rooms)
+ * across paired Pis — `all → device → session`.
  *
  * Studio-picks a project with a click; the connection itself lives in
  * `usePiSession`, so this stays presentational and render-testable.
@@ -64,7 +111,13 @@ export function HomeScreen({
 }) {
   const [filter, setFilter] = useState<HomeFilter>("all");
   const counts = useMemo(() => countProjects(projects), [projects]);
-  const visible = useMemo(() => filterProjects(projects, filter), [projects, filter]);
+  // The tabs filter sessions, not devices: a device with no visible room
+  // under the current filter is hidden from the tree.
+  const devices = useMemo(
+    () => groupByDevice(filterProjects(projects, filter)),
+    [projects, filter],
+  );
+  const visible = devices.flatMap((device) => device.projects);
 
   return (
     <div className="pi-safe-pad-roomy mx-auto flex w-full max-w-2xl flex-col gap-3 font-mono text-[13px]">
@@ -133,45 +186,65 @@ export function HomeScreen({
           no {filter} projects
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {visible.map((project) => {
-            const { tone, label } = presenceOf(project);
-            const title = projectTitle(project);
+        <ul className="flex flex-col gap-3">
+          {devices.map((device) => {
+            const deviceTone = devicePresence(device);
             return (
-              <li key={`${project.epk}:${project.roomId}`}>
-                <button
-                  type="button"
-                  onClick={() => onOpen(project.epk, project.roomId)}
-                  aria-current={project.active ? "true" : undefined}
-                  className="block w-full border-l-2 pl-3 text-left hover:bg-[var(--pi-popover)]"
-                  style={{
-                    borderColor: project.active ? ROSE : "var(--pi-border-strong)",
-                  }}
-                >
-                  <span className="flex items-baseline gap-2">
-                    <span aria-hidden="true" style={{ color: tone }}>
-                      ●
-                    </span>
-                    <span className="min-w-0 break-words" style={{ color: FG }}>
-                      {title}
-                    </span>
-                    {project.active ? <span style={{ color: ROSE }}>· current</span> : null}
-                    <span className="ml-auto text-[11px]" style={{ color: tone }}>
-                      {label}
-                    </span>
+              <li key={device.epk} role="group" aria-label={`Device ${device.peerLabel}`}>
+                {/* Device node: the tree's middle level. */}
+                <div className="flex items-baseline gap-2 border-l-2 pl-3" style={{ borderColor: "var(--pi-border-strong)" }}>
+                  <span aria-hidden="true" style={{ color: deviceTone.tone }}>
+                    ●
                   </span>
-                  <span className="mt-0.5 block truncate text-[11px]" style={{ color: MUTED }}>
-                    {project.peerLabel}
-                    {project.hostname ? ` · ${project.hostname}` : ""}
-                    {project.model ? ` · ${project.model}` : ""}
-                    {` · room ${project.roomId}`}
+                  <span className="min-w-0 break-words" style={{ color: DIM }}>
+                    {device.peerLabel}
                   </span>
-                  {project.cwd ? (
-                    <span className="block truncate text-[11px]" style={{ color: DIM }}>
-                      {project.cwd}
-                    </span>
-                  ) : null}
-                </button>
+                  <span className="ml-auto text-[11px]" style={{ color: deviceTone.tone }}>
+                    {deviceTone.label}
+                  </span>
+                </div>
+                <div className="ml-[5px] border-l" style={{ borderColor: "var(--pi-border)" }}>
+                  {/* Session nodes, indented under their device. */}
+                  <ul className="flex flex-col gap-2 py-1 pl-4">
+                    {device.projects.map((project) => {
+                      const { tone, label } = presenceOf(project);
+                      const title = projectTitle(project);
+                      return (
+                        <li key={`${project.epk}:${project.roomId}`}>
+                          <button
+                            type="button"
+                            onClick={() => onOpen(project.epk, project.roomId)}
+                            aria-current={project.active ? "true" : undefined}
+                            className="block w-full text-left hover:bg-[var(--pi-popover)]"
+                          >
+                            <span className="flex items-baseline gap-2">
+                              <span aria-hidden="true" style={{ color: tone }}>
+                                ●
+                              </span>
+                              <span className="min-w-0 break-words" style={{ color: FG }}>
+                                {title}
+                              </span>
+                              {project.active ? <span style={{ color: ROSE }}>· current</span> : null}
+                              <span className="ml-auto text-[11px]" style={{ color: tone }}>
+                                {label}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px]" style={{ color: MUTED }}>
+                              {project.hostname ? `${project.hostname} · ` : ""}
+                              {project.model ? `${project.model} · ` : ""}
+                              {`room ${project.roomId}`}
+                            </span>
+                            {project.cwd ? (
+                              <span className="block truncate text-[11px]" style={{ color: DIM }}>
+                                {project.cwd}
+                              </span>
+                            ) : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
               </li>
             );
           })}

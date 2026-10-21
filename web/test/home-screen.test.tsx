@@ -11,7 +11,9 @@ import {
   HomeScreen,
   baseName,
   countProjects,
+  devicePresence,
   filterProjects,
+  groupByDevice,
   presenceOf,
   projectTitle,
 } from "../components/pi/HomeScreen";
@@ -66,6 +68,24 @@ describe("home screen helpers", () => {
     expect(presenceOf(project({ online: false })).label).toBe("offline");
     expect(presenceOf(project({ online: false })).tone).toBe("var(--pi-muted)");
   });
+
+  it("groups projects into devices, preserving first-appearance order", () => {
+    const first = project({ epk: "a", roomId: "main", name: "one", online: true });
+    const second = project({ epk: "b", roomId: "main", name: "two", online: false });
+    const third = project({ epk: "a", roomId: "docs", name: "three" });
+    const groups = groupByDevice([first, second, third]);
+    expect(groups.map((g) => g.epk)).toEqual(["a", "b"]);
+    expect(groups[0].projects.map((p) => p.roomId)).toEqual(["main", "docs"]);
+    expect(groups[1].projects).toEqual([second]);
+  });
+
+  it("aggregates device presence across rooms: any working wins, then any online", () => {
+    const idle = project({ epk: "a", roomId: "main", online: true });
+    const busy = project({ epk: "a", roomId: "docs", online: true, working: true });
+    expect(devicePresence(groupByDevice([idle, busy])[0]).label).toBe("working");
+    expect(devicePresence(groupByDevice([idle])[0]).label).toBe("online");
+    expect(devicePresence(groupByDevice([project({ online: false })])[0]).label).toBe("offline");
+  });
 });
 
 describe("home screen", () => {
@@ -79,7 +99,7 @@ describe("home screen", () => {
     expect(html).not.toContain('role="tablist"');
   });
 
-  it("lists every project with presence, meta and the active marker", () => {
+  it("lists projects grouped under their device as a two-level tree", () => {
     const html = renderToStaticMarkup(
       <HomeScreen
         projects={[
@@ -92,7 +112,8 @@ describe("home screen", () => {
             hostname: "mac-mini",
             active: true,
           }),
-          project({ epk: "epk-2", roomId: "other", name: "docs", online: false }),
+          project({ epk: "epk-1", roomId: "docs", name: "docs" }),
+          project({ epk: "epk-2", roomId: "other", name: "blog", online: false, peerLabel: "thinkpad", hostname: "thinkpad" }),
         ]}
         onOpen={noop}
         onPair={noop}
@@ -100,15 +121,36 @@ describe("home screen", () => {
     );
     expect(html).toContain('role="tablist"');
     expect(html).toContain('aria-label="Filter projects"');
+    // One device node per peer, sessions nested beneath.
+    expect(html.match(/aria-label="Device mac-mini"/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Device thinkpad"/g)).toHaveLength(1);
     expect(html).toContain('aria-current="true"');
     expect(html).toContain("remote_pi");
+    expect(html).toContain("docs");
+    expect(html).toContain("blog");
     expect(html).toContain("· current");
     expect(html).toContain("mac-mini");
+    expect(html).toContain("thinkpad");
     expect(html).toContain("Claude Opus 4.8");
     expect(html).toContain("room main");
     expect(html).toContain("/Users/me/www/github/remote_pi");
-    expect(html).toContain("docs");
     expect(html).toContain("online");
     expect(html).toContain("offline");
+  });
+
+  it("hides devices with no visible room under the filter", () => {
+    const html = renderToStaticMarkup(
+      <HomeScreen
+        projects={[
+          project({ epk: "epk-1", roomId: "main", name: "up", online: true, peerLabel: "mac" }),
+          project({ epk: "epk-2", roomId: "main", name: "down", online: false, peerLabel: "pc" }),
+        ]}
+        onOpen={noop}
+        onPair={noop}
+      />,
+    );
+    // Default filter is "all", so both devices show.
+    expect(html).toContain('aria-label="Device mac"');
+    expect(html).toContain('aria-label="Device pc"');
   });
 });
