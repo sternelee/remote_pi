@@ -356,8 +356,9 @@ export function usePiSession(): PiSession {
   const projects = useMemo<ProjectEntry[]>(() => {
     const list: ProjectEntry[] = [];
     for (const peer of peers) {
+      // The device level shows the peer identity only — never a session name.
       const peerLabel =
-        peer.nickname ?? peer.session_name ?? peer.hostname ?? peer.remote_epk.slice(0, 12);
+        peer.nickname ?? peer.hostname ?? peer.remote_epk.slice(0, 12);
       const online = onlineByPeer[peer.remote_epk] ?? peer.remote_epk === activeEpk;
       const announced = roomsByPeer[peer.remote_epk];
       const rooms: ProjectRoom[] = announced?.length

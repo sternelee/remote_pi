@@ -35,7 +35,7 @@ export interface PeerRecord {
   /** Pi-side room this pairing addresses (plan/17). */
   room_id: string;
   hostname?: string;
-  /** User-chosen label; falls back to `session_name` in the UI. */
+  /** User-chosen device label; UIs fall back to `hostname`, then the epk. */
   nickname?: string;
   /** `pair_ok.harness.name` — e.g. "Pi coding agent". */
   harness?: string;

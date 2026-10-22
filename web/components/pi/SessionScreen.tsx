@@ -86,7 +86,10 @@ export function SessionScreen({
     };
   }, [session.uiControl.title, notifications.unread]);
 
-  const peerLabel = peer ? (peer.nickname ?? peer.session_name) : "no peer";
+  // The peer label is the device identity — never a session name.
+  const peerLabel = peer
+    ? (peer.nickname ?? peer.hostname ?? peer.remote_epk.slice(0, 12))
+    : "no peer";
 
   return (
     <div className="pi-safe-pad flex h-dvh min-w-0 flex-col gap-3">
@@ -107,7 +110,8 @@ export function SessionScreen({
           {session.relayStatus === "online" ? "●" : "○"} {session.relayStatus}
         </span>
         <span style={{ color: FG }}>{peerLabel}</span>
-        {peer?.hostname ? <span style={{ color: DIM }}>{peer.hostname}</span> : null}
+        {/* Hostname rides alongside the nickname; when it IS the label, skip it. */}
+        {peer?.hostname && peer.nickname ? <span style={{ color: DIM }}>{peer.hostname}</span> : null}
         {session.model ? <span style={{ color: DIM }}>{session.model}</span> : null}
         <span style={{ color: DIM }}>room {peer?.room_id ?? "—"}</span>
         <span className="ml-auto flex items-baseline gap-3">
