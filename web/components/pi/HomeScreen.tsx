@@ -201,7 +201,8 @@ export function HomeScreen({
                     {deviceTone.label}
                   </span>
                 </div>
-                {device.hostname ? (
+                {/* Hostname rides under the nickname; when it IS the label, skip it. */}
+                {device.hostname && device.peerLabel !== device.hostname ? (
                   <span className="block pl-3 text-[11px]" style={{ color: MUTED }}>
                     {device.hostname}
                   </span>
