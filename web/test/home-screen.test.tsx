@@ -1,7 +1,8 @@
 /**
  * Home screen render + helper tests. The home screen is the multi-project
- * entry point: one row per `peer × room`, so a regression in the filter,
- * presence tone or active marker fails here.
+ * entry point: a `device → project → session` tree over every paired Pi,
+ * so a regression in the filter, grouping, presence tone or active marker
+ * fails here.
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
@@ -14,8 +15,11 @@ import {
   devicePresence,
   filterProjects,
   groupByDevice,
+  groupByProject,
   presenceOf,
+  projectPresence,
   projectTitle,
+  roomTitle,
 } from "../components/pi/HomeScreen";
 import type { ProjectEntry } from "../lib/session/usePiSession";
 
@@ -60,6 +64,11 @@ describe("home screen helpers", () => {
     expect(projectTitle(project({ roomId: "r" }))).toBe("r");
   });
 
+  it("labels a room by name, else the room id", () => {
+    expect(roomTitle(project({ name: "Work", roomId: "r" }))).toBe("Work");
+    expect(roomTitle(project({ roomId: "r" }))).toBe("r");
+  });
+
   it("maps working/online/offline to tones and labels", () => {
     expect(presenceOf(project({ working: true })).label).toBe("working");
     expect(presenceOf(project({ working: true })).tone).toBe("var(--pi-yellow)");
@@ -75,8 +84,31 @@ describe("home screen helpers", () => {
     const third = project({ epk: "a", roomId: "docs", name: "three" });
     const groups = groupByDevice([first, second, third]);
     expect(groups.map((g) => g.epk)).toEqual(["a", "b"]);
-    expect(groups[0].projects.map((p) => p.roomId)).toEqual(["main", "docs"]);
-    expect(groups[1].projects).toEqual([second]);
+    expect(groups[0].projects.flatMap((p) => p.rooms.map((r) => r.roomId))).toEqual([
+      "main",
+      "docs",
+    ]);
+    expect(groups[1].projects.flatMap((p) => p.rooms)).toEqual([second]);
+  });
+
+  it("groups a device's rooms into projects by cwd, rooms without one stand alone", () => {
+    const main = project({ epk: "a", roomId: "main", cwd: "/work/app", name: "app" });
+    const scratch = project({ epk: "a", roomId: "scratch", cwd: "/work/app/" });
+    const loose = project({ epk: "a", roomId: "loose" });
+    const groups = groupByProject([main, scratch, loose]);
+    // "…/app" and "…/app/" normalize to one project; the cwd-less room is its own.
+    expect(groups.map((g) => g.key)).toEqual(["/work/app", "loose"]);
+    expect(groups[0].rooms.map((r) => r.roomId)).toEqual(["main", "scratch"]);
+    expect(groups[0].title).toBe("app");
+    expect(groups[1].rooms).toEqual([loose]);
+  });
+
+  it("aggregates project presence across rooms: any working wins, then any online", () => {
+    const idle = project({ roomId: "main", online: true, cwd: "/work/app" });
+    const busy = project({ roomId: "docs", online: true, working: true, cwd: "/work/app" });
+    expect(projectPresence(groupByProject([idle, busy])[0]).label).toBe("working");
+    expect(projectPresence(groupByProject([idle])[0]).label).toBe("online");
+    expect(projectPresence(groupByProject([project({ online: false })])[0]).label).toBe("offline");
   });
 
   it("aggregates device presence across rooms: any working wins, then any online", () => {
@@ -99,7 +131,7 @@ describe("home screen", () => {
     expect(html).not.toContain('role="tablist"');
   });
 
-  it("lists projects grouped under their device as a two-level tree", () => {
+  it("lists projects grouped under their device and project as a three-level tree", () => {
     const html = renderToStaticMarkup(
       <HomeScreen
         projects={[
@@ -112,7 +144,7 @@ describe("home screen", () => {
             hostname: "mac-mini",
             active: true,
           }),
-          project({ epk: "epk-1", roomId: "docs", name: "docs" }),
+          project({ epk: "epk-1", roomId: "docs", cwd: "/Users/me/www/github/remote_pi" }),
           project({ epk: "epk-2", roomId: "other", name: "blog", online: false, peerLabel: "thinkpad", hostname: "thinkpad" }),
         ]}
         onOpen={noop}
@@ -121,9 +153,10 @@ describe("home screen", () => {
     );
     expect(html).toContain('role="tablist"');
     expect(html).toContain('aria-label="Filter projects"');
-    // One device node per peer, sessions nested beneath.
+    // One device node per peer, projects and sessions nested beneath.
     expect(html.match(/aria-label="Device mac-mini"/g)).toHaveLength(1);
     expect(html.match(/aria-label="Device thinkpad"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Project remote_pi"');
     expect(html).toContain('aria-current="true"');
     expect(html).toContain("remote_pi");
     expect(html).toContain("docs");
